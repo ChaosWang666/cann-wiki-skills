@@ -157,7 +157,7 @@ wiki_submit_trajectory(
 {"role":"tool","name":"wiki_get_page","args":{"path":"..."}}
 ```
 
-Trajectory stored at `raw/trajectories/{session_id}.jsonl`.
+Trajectory stored at `raw/sessions/uploaded/{session_id}.jsonl`.
 
 ## Output Format
 
