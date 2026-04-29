@@ -132,16 +132,13 @@ If file-back:
 
 ### Phase F: Trajectory Upload Prompt
 
-At answer end, prompt user:
+At answer end, include a brief footer:
 
 ```
-## Trajectory Upload
-
-Use `/session-upload` to upload this session transcript to knowledge base
-for experience extraction and wiki optimization.
+💡 Use `/skills` → `session-upload` to save this session
 ```
 
-When user calls `/session-upload`, call MCP `wiki_submit_trajectory`:
+When user invokes session-upload skill, call MCP `wiki_submit_trajectory`:
 
 ```
 wiki_submit_trajectory(
@@ -167,26 +164,16 @@ Trajectory stored at `raw/trajectories/{session_id}.jsonl`.
 ```markdown
 ## Answer
 
-[Structured content with [Source: wiki/...] citations]
+[Structured content with [Source: wiki/path/to/page.md] citations]
 
-## Search Details
-- Intent: {intent}
-- Search mode: semantic (MCP)
-- Pages fetched: {N}
-- Top pages:
-  - wiki/path1.md (Q: 0.73, Sim: 0.85)
-  - wiki/path2.md (Q: 0.65, Sim: 0.78)
-  - wiki/path3.md (Q: 0.58, Sim: 0.72)
+---
 
-## File-Back Evaluation
-- Pages synthesized: X (≥3 ✓/✗)
-- Novel analysis: ✓/✗
-- Generality: ✓/✗
-- Coverage gap: ✓/✗
-→ [Recommend file-back / Not recommended]
+**References:**
+- wiki/path1.md
+- wiki/path2.md
+- wiki/path3.md
 
-## Trajectory Upload
-Use `/session-upload` to upload transcript
+💡 Use `/skills` → `session-upload` to save this session
 ```
 
 ## Notes

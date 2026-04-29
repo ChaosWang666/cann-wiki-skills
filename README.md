@@ -78,7 +78,7 @@ Claude Desktop can auto-start MCP server on launch. Setup skill will configure t
 3. Start MCP Server (if remote mode)
 4. Restart agent
 5. Use wiki-query: "What is AscendC programming model?"
-6. Upload trajectory: /session-upload
+6. Upload trajectory: `/skills` → `session-upload`
 ```
 
 ## Troubleshooting

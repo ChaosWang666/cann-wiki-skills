@@ -1,6 +1,6 @@
 ---
 name: session-upload
-description: "Upload session trajectory to wiki knowledge base. Use when user explicitly requests to save conversation, mentions 'upload trajectory', 'save session', or triggers '/session-upload' command."
+description: "Upload session trajectory to wiki knowledge base. Use when user explicitly requests to save conversation, mentions 'upload trajectory', 'save session', or invokes this skill via `/skills`."
 ---
 
 # Session Upload
@@ -20,7 +20,7 @@ If MCP Server not running, prompt user to start it first.
 When user:
 - Explicitly requests to upload/save current session
 - Mentions "upload trajectory", "save conversation"
-- Triggers `/session-upload` command
+- Invokes via `/skills` command → select `session-upload`
 - After completing a wiki-query session (skill may prompt user)
 
 ## Input
@@ -146,11 +146,10 @@ If upload failed:
 
 ## Integration with wiki-query
 
-This skill is often triggered after wiki-query completes. The wiki-query skill should prompt:
+This skill is often triggered after wiki-query completes. The wiki-query skill includes a footer:
 
 ```
-## Trajectory Upload
-Use `/session-upload` to upload this session transcript
+💡 Use `/skills` → `session-upload` to save this session
 ```
 
-Users can then trigger this skill to complete the feedback loop.
+Users invoke `/skills` command, select `session-upload` skill to complete the feedback loop.
