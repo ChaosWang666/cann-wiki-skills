@@ -1,4 +1,4 @@
-# AscendC Wiki Skills
+# ascendc-wiki-skills
 
 LLM Agent skills for AscendC Kernel Wiki knowledge retrieval and session trajectory upload.
 
@@ -8,109 +8,98 @@ LLM Agent skills for AscendC Kernel Wiki knowledge retrieval and session traject
 npx skills@latest add qianbi1999/ascendc-wiki-skills
 ```
 
-Select skills you want and target agent.
+Select **setup-ascendc-wiki** first, then wiki-query and session-upload.
 
-## Skills Included
+## Important: Run Setup First!
 
-| Skill | Description | Trigger |
-|-------|-------------|---------|
-| **wiki-query** | Semantic search Wiki via MCP, auto-fetch top-3 pages, synthesize answers | AscendC questions, `/wiki-query` |
-| **session-upload** | Upload session transcript for experience feedback loop | `/session-upload`, "upload trajectory" |
+**Before using wiki-query or session-upload, run `/setup-ascendc-wiki` to configure MCP connection.**
 
-## Prerequisites
+The setup skill will:
+1. Check if MCP Server is running
+2. Detect your agent type (OpenCode/Claude Code/Cursor)
+3. Create MCP configuration file
+4. Verify MCP tools are available
 
-### MCP Server Required
+## Skills
 
-Both skills require MCP Server running with these tools:
+| Skill | Description | Must run setup first |
+|-------|-------------|---------------------|
+| **setup-ascendc-wiki** | Configure MCP connection | No (run this first) |
+| **wiki-query** | Semantic search Wiki via MCP | Yes |
+| **session-upload** | Upload session transcript | Yes |
 
-| Tool | Purpose |
-|------|---------|
-| `wiki_search` | Semantic search |
-| `wiki_get_page` | Get full page content |
-| `wiki_submit_trajectory` | Upload session transcript |
+## Architecture
 
-### MCP Server Setup
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Your Agent (OpenCode/Claude Code/Cursor)                   │
+│  ├── MCP config: .opencode/opencode.json or .mcp.json       │
+│  └── Skills: setup-ascendc-wiki, wiki-query, session-upload │
+└───────────────────────────┬─────────────────────────────────┘
+                            │ MCP Protocol
+                            ↓
+┌─────────────────────────────────────────────────────────────┐
+│  MCP Server (separate repo)                                  │
+│  ├── Port: localhost:3000                                   │
+│  ├── Tools: wiki_search, wiki_get_page, wiki_submit_trajectory │
+│  └── Retriever: local (sentence-transformers) or llm        │
+└─────────────────────────────────────────────────────────────┘
+```
 
+**Key insight**: MCP Server and Skills are **separate**:
+- **MCP Server** runs independently (user manages it)
+- **Skills** are installed in agent (tell agent how to use MCP tools)
+- **Setup skill** bridges them by configuring MCP connection
+
+## MCP Server Setup
+
+The MCP Server must be running before agent can use it.
+
+### Option 1: Remote Mode (Recommended)
+
+Start MCP Server separately:
 ```bash
-# Local embedding mode (recommended)
+# In MCP Server repo
 EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
 python server.py --retriever local --port 3000
 ```
 
-Configure your agent's MCP connection:
+Then run `/setup-ascendc-wiki` in your agent. Setup will configure agent to connect to `http://localhost:3000/mcp`.
 
-**Claude Code** (`.mcp.json`):
-```json
-{
-  "mcpServers": {
-    "ascendc-wiki": {
-      "url": "http://localhost:3000/mcp"
-    }
-  }
-}
-```
+### Option 2: Local Mode (Claude Desktop only)
 
-**OpenCode** (`opencode.json`):
-```json
-{
-  "mcp": {
-    "ascendc-wiki": {
-      "type": "remote",
-      "url": "http://localhost:3000/mcp",
-      "enabled": true
-    }
-  }
-}
-```
+Claude Desktop can auto-start MCP server on launch. Setup skill will configure this if you choose local mode.
 
-## Usage
-
-### wiki-query
-
-Ask AscendC questions:
-```
-"What is AscendC programming model?"
-"How to implement GELU operator?"
-"ElementwiseSch vs manual pipeline?"
-```
-
-### session-upload
-
-Upload trajectory:
-```
-/session-upload
-```
-
-## Workflow
+## Usage Flow
 
 ```
-User Question
-     ↓
-wiki-query skill
-     ↓
-MCP wiki_search → top-3 pages
-     ↓
-MCP wiki_get_page (batch)
-     ↓
-Synthesized Answer
-     ↓
-/session-upload
-     ↓
-session-upload skill
-     ↓
-MCP wiki_submit_trajectory
-     ↓
-raw/sessions/uploaded/{uuid}.jsonl
+1. Install skills: npx skills@latest add qianbi1999/ascendc-wiki-skills
+2. Run setup: /setup-ascendc-wiki
+3. Start MCP Server (if remote mode)
+4. Restart agent
+5. Use wiki-query: "What is AscendC programming model?"
+6. Upload trajectory: /session-upload
 ```
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| wiki_search not found | Run `/setup-ascendc-wiki` first |
+| MCP connection failed | Check MCP Server is running: `curl localhost:3000/health` |
+| Config not loaded | Restart agent after setup |
+| Skills not triggering | Check skill activation keywords |
 
 ## Structure
 
 ```
 ascendc-wiki-skills/
 ├── .claude-plugin/
-│   └── plugin.json       # Skill list for installer
+│   └── plugin.json
 ├── skills/
 │   └── wiki/
+│       ├── setup-ascendc-wiki/
+│       │   └── SKILL.md          ← Run this first
 │       ├── wiki-query/
 │       │   └── SKILL.md
 │       └── session-upload/

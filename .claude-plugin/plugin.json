@@ -1,6 +1,7 @@
 {
   "name": "ascendc-wiki-skills",
   "skills": [
+    "./skills/wiki/setup-ascendc-wiki",
     "./skills/wiki/wiki-query",
     "./skills/wiki/session-upload"
   ]
