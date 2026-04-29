@@ -1,155 +1,195 @@
 ---
 name: session-upload
-description: "Upload session trajectory to wiki knowledge base. Use when user explicitly requests to save conversation, mentions 'upload trajectory', 'save session', or invokes this skill via `/skills`."
+description: "Auto-upload current session transcript. One command: /skills → session-upload."
 ---
 
 # Session Upload
 
-Upload current session transcript to AscendC Wiki knowledge base for experience extraction and feedback loop.
+Auto-upload current session transcript to AscendC Wiki knowledge base.
 
 ## Prerequisites
 
-**MCP Server must be running** with `wiki_submit_trajectory` tool available.
+1. OpenCode CLI available (`opencode` command)
+2. MCP Server running with `wiki_submit_trajectory` tool
+3. Session contains "Ascend C" / "AscendC" keywords (for automatic processing)
 
-Upload destination: `raw/sessions/uploaded/{session_id}.jsonl`
+## Workflow (Fully Automated)
 
-If MCP Server not running, prompt user to start it first.
+### Step 1: Get Current Session ID
 
-## Activation
-
-When user:
-- Explicitly requests to upload/save current session
-- Mentions "upload trajectory", "save conversation"
-- Invokes via `/skills` command → select `session-upload`
-- After completing a wiki-query session (skill may prompt user)
-
-## Input
-
-$ARGUMENTS (optional: can include feedback or notes)
-
-## Workflow
-
-### Phase A: Collect Transcript
-
-Gather complete conversation history in JSONL format (one JSON object per line).
-
-**Format**:
-
-```jsonl
-{"role":"user","content":"..."}
-{"role":"assistant","content":"...","tool_calls":["wiki_search","wiki_get_page"]}
-{"role":"tool","name":"wiki_search","args":{"query":"...","limit":3}}
-{"role":"tool","name":"wiki_get_page","args":{"path":"..."}}
+```bash
+SESSION_ID=$(opencode session list -n 1 --format json | jq -r '.[0].id')
 ```
 
-**Rules**:
-- Include all user messages
-- Include all assistant messages with `tool_calls` array
-- Include tool invocation metadata (name, args)
-- **Do NOT include tool return results** (keep transcript concise)
-- Keep each message's content summarized if too long
+### Step 2: Export Session JSON
 
-### Phase B: Generate Session ID
-
-Generate UUID v4 for session_id:
-
-```
-session_id = generate_uuid_v4()
+```bash
+opencode export $SESSION_ID
 ```
 
-Example: `550e8400-e29b-41d4-a716-446655440000`
+Returns complete JSON with all messages and parts.
 
-### Phase C: Call MCP Tool
+### Step 3: Convert JSON to Markdown
 
-Call `wiki_submit_trajectory`:
+Use embedded Python script (matches TUI `/export` format):
+
+```python
+#!/usr/bin/env python3
+"""
+OpenCode session JSON to Markdown converter.
+Matches the exact format of TUI /export command.
+"""
+import json
+import sys
+from datetime import datetime
+
+def format_timestamp(ms):
+    if ms == 0: return ""
+    return datetime.fromtimestamp(ms / 1000).strftime("%x, %X")
+
+def format_assistant_header(msg_info, include_metadata=True):
+    if not include_metadata: return "## Assistant\n\n"
+    agent = msg_info.get("agent", "build")
+    model_id = msg_info.get("model", {}).get("modelID", "unknown")
+    duration = ""
+    tc = msg_info.get("time", {}).get("created")
+    tf = msg_info.get("time", {}).get("completed")
+    if tc and tf: duration = f"{(tf - tc) / 1000:.1f}s"
+    parts = [agent.capitalize(), model_id]
+    if duration: parts.append(duration)
+    return f"## Assistant ({' · '.join(parts)})\n\n"
+
+def format_part(part, thinking=True, tools=True):
+    t = part.get("type", "")
+    if t == "text" and not part.get("synthetic"):
+        return f"{part.get('text', '')}\n\n"
+    if t == "reasoning" and thinking:
+        return f"_Thinking:_\n\n{part.get('text', '')}\n\n"
+    if t == "tool" and tools:
+        name = part.get("tool", "")
+        r = f"**Tool: {name}**\n"
+        s = part.get("state", {})
+        if s.get("input"): r += f"\n**Input:**\n```json\n{json.dumps(s['input'], indent=2)}\n```\n"
+        if s.get("status") == "completed" and s.get("output"):
+            r += f"\n**Output:**\n```\n{s['output'][:500]}\n```\n"
+        r += "\n"
+        return r
+    return ""
+
+def format_transcript(json_str, thinking=True, tools=False, metadata=True):
+    data = json.loads(json_str)
+    info = data.get("info", {})
+    msgs = data.get("messages", [])
+    lines = [
+        f"# {info.get('title', 'Untitled')}\n\n",
+        f"**Session ID:** {info.get('id', '')}\n",
+        f"**Created:** {format_timestamp(info.get('time', {}).get('created', 0))}\n",
+        f"**Updated:** {format_timestamp(info.get('time', {}).get('updated', 0))}\n\n",
+        "---\n\n",
+    ]
+    for m in msgs:
+        mi = m.get("info", {})
+        ps = m.get("parts", [])
+        lines.append("## User\n\n" if mi.get("role") == "user" else format_assistant_header(mi, metadata))
+        for p in ps:
+            lines.append(format_part(p, thinking, tools))
+        lines.append("---\n\n")
+    return "".join(lines)
+
+if __name__ == "__main__":
+    content = sys.stdin.read() if len(sys.argv) == 1 else open(sys.argv[1]).read()
+    print(format_transcript(content))
+```
+
+Run conversion:
+```bash
+opencode export $SESSION_ID | python3 -c "$(cat <<'SCRIPT'
+... embedded script ...
+SCRIPT
+)"
+```
+
+### Step 4: Upload via MCP
 
 ```
 wiki_submit_trajectory(
-  session_id: "<UUID>",
-  transcript: "<JSONL string>",
-  source: "<agent name, e.g., 'claude-code', 'opencode', 'cursor'>"
+  session_id="$SESSION_ID",
+  transcript="<converted Markdown>",
+  source="opencode"
 )
 ```
 
-### Phase D: Report Result
+### Step 5: Report Result
 
-Report upload status:
-
-```markdown
-## Upload Complete
-
-- Session ID: {session_id}
-- Status: ok
-- Path: raw/sessions/uploaded/{session_id}.jsonl
-- Size: {N} messages logged
 ```
-
-If upload failed:
-```markdown
-## Upload Failed
-
-- Error: {error message}
-- Action: Check MCP Server status, retry later
+✓ 上传成功
+- Session: {session_id}
+- Path: raw/sessions/uploaded/{session_id}.md
+- Processing: knowledge_engine auto-sanitize + knowledge extraction
 ```
 
 ## Output Format
 
+The transcript matches TUI `/export` format:
+
 ```markdown
-## Session Upload
+# {title}
 
-### Transcript Summary
-- Messages: {N}
-- Tool calls: {M}
-- Duration: approximately {time}
+**Session ID:** {id}
+**Created:** {timestamp}
+**Updated:** {timestamp}
 
-### Upload Result
-- Session ID: {uuid}
-- Status: ok/error
-- Path: raw/sessions/uploaded/{session_id}.jsonl
+---
 
-### Next Steps
-- Trajectory will be processed by extraction service
-- Knowledge gaps extracted → wiki pages created
+## User
+
+{user text}
+
+---
+
+## Assistant (Build · GLM-5 · 12.5s)
+
+_Thinking:_
+
+{reasoning}
+
+**Tool: read**
+
+**Input:**
+```json
+{"filePath": "..."}
 ```
 
-## Notes
+**Output:**
+```
+{tool output}
+```
 
-- **MCP Server required** — Cannot upload without MCP connection
-- **Transcript excludes tool returns** — Keep file size manageable
-- **One upload per session** — Don't upload partial conversations
-- **Source identifier important** — Helps downstream processing filter by agent
-- **Graceful error handling** — If upload fails, offer retry or manual save
+---
+
+...
+```
+
+## Domain Requirement
+
+Transcript must contain "Ascend C" or "AscendC" keywords.
+
+Without keywords → goes to `raw/sessions/to_review/` for manual review.
 
 ## Error Handling
 
 | Scenario | Handling |
 |----------|----------|
-| MCP not running | Prompt: "Start MCP Server first" |
+| OpenCode CLI unavailable | "Install opencode first" |
+| MCP not running | "Start MCP Server first" |
 | Empty transcript | "No messages to upload" |
+| JSON parse error | "Invalid session data" |
 | Upload API error | "Network error, retry later" |
-| Invalid session_id | Generate new UUID and retry |
 
-## Example Transcript
+## Notes
 
-```jsonl
-{"role":"user","content":"What is AscendC programming model?"}
-{"role":"assistant","content":"I'll search the wiki for AscendC programming model...","tool_calls":["wiki_search"]}
-{"role":"tool","name":"wiki_search","args":{"query":"AscendC programming model","limit":3}}
-{"role":"assistant","content":"Found 3 relevant pages. Let me fetch them...","tool_calls":["wiki_get_page","wiki_get_page","wiki_get_page"]}
-{"role":"tool","name":"wiki_get_page","args":{"path":"guide/concepts/programming-model.md"}}
-{"role":"tool","name":"wiki_get_page","args":{"path":"guide/concepts/memory-hierarchy.md"}}
-{"role":"tool","name":"wiki_get_page","args":{"path":"guide/concepts/pipeline-sync.md"}}
-{"role":"assistant","content":"Based on wiki pages, AscendC uses SIMD/SIMT programming model with..."}
-{"role":"user","content":"Thanks! Upload this session."}
-{"role":"assistant","content":"Uploading trajectory...","tool_calls":["wiki_submit_trajectory"]}
-```
-
-## Integration with wiki-query
-
-This skill is often triggered after wiki-query completes. The wiki-query skill includes a footer:
-
-```
-💡 Use `/skills` → `session-upload` to save this session
-```
-
-Users invoke `/skills` command, select `session-upload` skill to complete the feedback loop.
+- **Zero user interaction** — Agent handles all steps automatically
+- **Format matches `/export`** — Same Markdown structure as TUI export
+- **JSON to MD conversion** — Deterministic, no LLM involved
+- **Tool details excluded by default** — Keep output compact (can enable if needed)
+- **Thinking included** — Preserves reasoning blocks
