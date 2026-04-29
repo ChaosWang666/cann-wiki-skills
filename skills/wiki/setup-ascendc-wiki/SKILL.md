@@ -31,11 +31,18 @@ Before setup, check:
 
 ### Step 1: Check MCP Server Status
 
-Run health check:
+Verify MCP Server is running:
 
-```bash
-curl -s http://localhost:3000/health
-```
+1. Check if port 3000 is listening:
+   ```bash
+   curl -s http://localhost:3000/mcp
+   ```
+   (Returns MCP protocol info if running)
+
+2. Or try calling MCP tool directly (after agent config):
+   ```
+   wiki_get_index()
+   ```
 
 **If server not running**:
 - Ask user: "MCP Server is not running. Do you have the MCP Server repo?"
