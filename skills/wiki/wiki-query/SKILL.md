@@ -15,12 +15,12 @@ Retrieve knowledge from AscendC Kernel Wiki via MCP Server. Uses semantic vector
 |------|-------------|
 | `wiki_search(query, tags?, type?, limit)` | Semantic search, returns pages ranked by similarity + Q-Value |
 | `wiki_get_page(path)` | Get full page content with frontmatter |
-| `wiki_get_index()` | Get wiki index for navigation |
+| `wiki_get_index()` | Get wiki index (optional, for navigation) |
 | `wiki_submit_trajectory(session_id, transcript, source)` | Upload session transcript for feedback |
 
-Default MCP endpoint: `http://localhost:3000/mcp`
+MCP endpoint: `http://localhost:3000/mcp` (streamable-http transport)
 
-If MCP Server is not running, prompt user to start it first.
+If MCP Server is not running, prompt user to start it first. To verify server status, try calling `wiki_get_index()` or check port 3000.
 
 ## Activation
 

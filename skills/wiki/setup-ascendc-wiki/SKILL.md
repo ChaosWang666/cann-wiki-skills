@@ -14,8 +14,8 @@ This is a prompt-driven skill. Explore, present what's missing, confirm with use
 Before setup, check:
 
 1. **MCP Server running?**
-   - Run: `curl http://localhost:3000/health`
-   - Expected: `{"status":"healthy"}`
+   - Try calling `wiki_get_index()` MCP tool
+   - Or check if port 3000 is listening: `curl -s http://localhost:3000/mcp` (returns MCP protocol info)
    - If not running, prompt user to start it first
 
 2. **Agent MCP config exists?**
@@ -24,7 +24,8 @@ Before setup, check:
    - If missing, create it
 
 3. **MCP tools available?**
-   - After config, check if `wiki_search`, `wiki_get_page`, `wiki_submit_trajectory` are available
+   - Required tools: `wiki_search`, `wiki_get_page`, `wiki_get_index`, `wiki_submit_trajectory`
+   - After config, verify tools appear in agent's MCP tool list
 
 ## Process
 

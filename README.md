@@ -86,7 +86,7 @@ Claude Desktop can auto-start MCP server on launch. Setup skill will configure t
 | Problem | Solution |
 |---------|----------|
 | wiki_search not found | Run `/setup-ascendc-wiki` first |
-| MCP connection failed | Check MCP Server is running: `curl localhost:3000/health` |
+| MCP connection failed | Check MCP Server is running, try calling `wiki_get_index()` |
 | Config not loaded | Restart agent after setup |
 | Skills not triggering | Check skill activation keywords |
 
