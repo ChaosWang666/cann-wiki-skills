@@ -142,19 +142,19 @@ Combine multi-page info into structured answer:
 
 **Example (correct):**
 ```markdown
-### 对齐要求 [Source: wiki/static/ascendc/guide/api/vector-compute.md]
+### Alignment Requirements [Source: wiki/static/ascendc/guide/api/vector-compute.md]
 
-DataCopy 搬运长度必须 **32 字节对齐**。
+DataCopy transfer length must be **32-byte aligned**.
 
-| 要求 | 说明 |
-| DataCopy 长度 | 32B 对齐 |
+| Requirement | Description |
+| DataCopy length | 32B aligned |
 ```
 
 **Example (incorrect):**
 ```markdown
-### 对齐要求
+### Alignment Requirements
 
-DataCopy 搬运长度必须 **32 字节对齐**。
+DataCopy transfer length must be **32-byte aligned**.
 
 ---
 
