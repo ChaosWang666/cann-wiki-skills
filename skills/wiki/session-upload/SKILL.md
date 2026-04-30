@@ -1,6 +1,6 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. Direct command: `/session-upload`."
+description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. Claude Code: /session-upload. OpenCode: /skills → select session-upload."
 ---
 
 # Session Upload

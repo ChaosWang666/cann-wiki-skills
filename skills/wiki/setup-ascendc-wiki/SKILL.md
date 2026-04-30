@@ -1,6 +1,6 @@
 ---
 name: setup-ascendc-wiki
-description: "Setup MCP connection for AscendC Wiki skills. Run `/setup-ascendc-wiki` before first use of wiki-query or session-upload."
+description: "Setup MCP connection for AscendC Wiki skills. Claude Code: /setup-ascendc-wiki. OpenCode: /skills → select setup-ascendc-wiki. Run before first use of wiki-query or session-upload."
 ---
 
 # Setup AscendC Wiki Skills

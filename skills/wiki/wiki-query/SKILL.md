@@ -1,6 +1,6 @@
 ---
 name: wiki-query
-description: "AscendC Wiki knowledge retrieval. MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/wiki-query`"
+description: "AscendC Wiki knowledge retrieval. MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Claude Code: /wiki-query. OpenCode: /skills → select wiki-query."
 ---
 
 # Wiki Query Agent
@@ -24,7 +24,7 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 
 ## Activation (MUST trigger this skill, NOT direct MCP calls)
 
-**CRITICAL**: When MCP tools (`mcp__ascendc-wiki__wiki_search`, `mcp__ascendc-wiki__wiki_get_page`) are available, **ALWAYS use `/wiki-query` skill instead of calling them directly**.
+**CRITICAL**: When MCP tools (`mcp__ascendc-wiki__wiki_search`, `mcp__ascendc-wiki__wiki_get_page`) are available, **ALWAYS use wiki-query skill instead of calling them directly**.
 
 **Why skill is required (not direct MCP):**
 - Intent classification → better search query formulation
@@ -36,13 +36,13 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 
 ---
 
-**Trigger `/wiki-query` when:**
+**Trigger wiki-query when:**
 - User mentions "AscendC" / "Ascend C" in any question
 - User asks about AscendC kernel development, operators, APIs, patterns
 - User requests comparison (e.g., "ElementwiseSch vs manual pipeline")
 - User requests how-to (e.g., "how to implement activation operator")
 - User requests coverage (e.g., "which operators use reduction")
-- User explicitly triggers `/wiki-query` or says "search wiki"
+- User explicitly triggers the skill (Claude Code: `/wiki-query`, OpenCode: `/skills` → select wiki-query)
 
 **Anti-pattern (DO NOT do this):**
 ```
@@ -52,9 +52,8 @@ mcp__ascendc-wiki__wiki_search(query="conv2d", limit=5)  # ❌ bypasses skill
 ```
 
 **Correct pattern:**
-```
-/wiki-query conv2d implementation  # ✅ triggers skill workflow
-```
+- Claude Code: `/wiki-query conv2d implementation`
+- OpenCode: `/skills` → select wiki-query, then ask "conv2d implementation"
 
 ## Input
 
