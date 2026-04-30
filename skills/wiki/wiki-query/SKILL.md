@@ -186,7 +186,7 @@ If file-back:
 At answer end, include a brief footer:
 
 ```
-💡 Use `/session-upload` to save this session to Wiki
+💡 Save this session to Wiki: Claude Code `/session-upload`, OpenCode `/skills` → select session-upload
 ```
 
 When user invokes session-upload skill, call MCP `wiki_submit_trajectory`:
@@ -224,7 +224,7 @@ Trajectory stored at `raw/sessions/uploaded/{session_id}.jsonl`.
 - wiki/path2.md
 - wiki/path3.md
 
-💡 Use `/session-upload` to save this session to Wiki
+💡 Save this session to Wiki: Claude Code `/session-upload`, OpenCode `/skills` → select session-upload
 ```
 
 ## Notes
