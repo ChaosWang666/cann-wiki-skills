@@ -10,7 +10,7 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills
 
 安装时会让你选择 agent 平台（多选），默认选中 Claude Code / OpenCode / Codex。
 
-**指定特定 agent：**
+**推荐指定特定 agent（避免安装到多个平台）：**
 ```bash
 # 只安装到 Claude Code
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
