@@ -45,11 +45,14 @@ Verify MCP Server is running:
    ```
 
 **If server not running**:
-- Ask user: "MCP Server is not running. Do you have the MCP Server repo?"
+- Ask user: "MCP Server is not running. Is the AscendC-Kernel-Wiki repo available?"
 - Provide startup command:
   ```bash
-  EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
-  python server.py --retriever local --port 3000
+  # In AscendC-Kernel-Wiki repo root (where wiki/ and raw/ exist)
+  cd mcp-server
+  IS_SANDBOX=1 python server.py --port 3000 --host 0.0.0.0
+  
+  # Non-root users can omit IS_SANDBOX=1
   ```
 - Wait for user to start server before continuing
 
@@ -124,9 +127,9 @@ claude mcp list           # should show ascendc-wiki as connected
   "mcpServers": {
     "ascendc-wiki": {
       "command": "python",
-      "args": ["path/to/mcp-server/server.py", "--retriever", "local"],
+      "args": ["path/to/AscendC-Kernel-Wiki/mcp-server/server.py", "--port", "3000", "--host", "0.0.0.0"],
       "env": {
-        "EMBEDDING_MODEL": "BAAI/bge-small-zh-v1.5"
+        "IS_SANDBOX": "1"
       }
     }
   }
@@ -134,8 +137,8 @@ claude mcp list           # should show ascendc-wiki as connected
 ```
 
 Explain each option:
-- **Remote mode**: Connect to already-running MCP server
-- **Local mode**: Claude Desktop auto-starts MCP server on launch
+- **Remote mode**: Connect to already-running MCP server (recommended)
+- **Local mode**: Claude Desktop auto-starts MCP server on launch (requires full path to server.py)
 
 ### Step 4: Confirm and Write
 

@@ -8,6 +8,20 @@ LLM Agent skills for AscendC Kernel Wiki knowledge retrieval and session traject
 npx skills@latest add qianbi1999/ascendc-wiki-skills
 ```
 
+安装时会让你选择 agent 平台（多选），默认选中 Claude Code / OpenCode / Codex。
+
+**指定特定 agent：**
+```bash
+# 只安装到 Claude Code
+npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
+
+# 只安装到 OpenCode
+npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
+
+# 安装到多个 agent
+npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code,opencode
+```
+
 Select **setup-ascendc-wiki** first, then wiki-query and session-upload.
 
 ## Important: Run Setup First!
@@ -55,30 +69,34 @@ The setup skill will:
 
 The MCP Server must be running before agent can use it.
 
-### Option 1: Remote Mode (Recommended)
+### Start MCP Server
 
-Start MCP Server separately:
+在 AscendC-Kernel-Wiki 仓库根目录启动：
+
 ```bash
-# In MCP Server repo
-EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
-python server.py --retriever local --port 3000
+cd mcp-server
+IS_SANDBOX=1 python server.py --port 3000 --host 0.0.0.0
 ```
 
-Then run `/setup-ascendc-wiki` in your agent. Setup will configure agent to connect to `http://localhost:3000/mcp`.
+启动成功输出：
+```
+[mcp 2026-04-29 23:55:00] 服务启动: 0.0.0.0:3000 heartbeat=1800s
+```
 
-### Option 2: Local Mode (Claude Desktop only)
-
-Claude Desktop can auto-start MCP server on launch. Setup skill will configure this if you choose local mode.
+**注意：**
+- `IS_SANDBOX=1`：root 用户必须显式声明，否则 Claude CLI 拒绝执行
+- 非 root 用户可省略 `IS_SANDBOX=1`
+- 服务必须在仓库根（与 `wiki/`、`raw/` 平级）启动
 
 ## Usage Flow
 
 ```
 1. Install skills: npx skills@latest add qianbi1999/ascendc-wiki-skills
-2. Run setup: /setup-ascendc-wiki
-3. Start MCP Server (if remote mode)
+2. Start MCP Server: cd mcp-server && IS_SANDBOX=1 python server.py --port 3000
+3. Run setup: /setup-ascendc-wiki
 4. Restart agent
 5. Use wiki-query: "What is AscendC programming model?"
-6. Upload trajectory: `/skills` → `session-upload`
+6. Upload trajectory: /session-upload
 ```
 
 ## Troubleshooting
