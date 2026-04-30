@@ -1,195 +1,271 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript. One command: /skills → session-upload."
+description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. One command: /skills → session-upload (or `/session-upload` in Claude Code)."
 ---
 
 # Session Upload
 
-Auto-upload current session transcript to AscendC Wiki knowledge base.
+Auto-upload the current session transcript to the AscendC Wiki knowledge base. Works for both **OpenCode** and **Claude Code** — the skill detects which agent is running and picks the right transcript source.
 
 ## Prerequisites
 
-1. OpenCode CLI available (`opencode` command)
-2. MCP Server running with `wiki_submit_trajectory` tool
-3. Session contains "Ascend C" / "AscendC" keywords (for automatic processing)
+1. MCP Server is running and `wiki_submit_trajectory` is available (run `/setup-ascendc-wiki` first).
+2. Either OpenCode CLI (`opencode`) is installed, OR the session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
+3. Session contains "Ascend C" / "AscendC" keywords (otherwise it lands in `raw/sessions/to_review/` for manual review).
 
-## Workflow (Fully Automated)
+## Step 1: Detect Agent
 
-### Step 1: Get Current Session ID
+Run a shell check to decide which path to take:
+
+```bash
+# Claude Code transcript directory for the current cwd
+ENC_CWD="$(pwd | sed 's|/|-|g')"
+CC_DIR="$HOME/.claude/projects/$ENC_CWD"
+
+if [ -d "$CC_DIR" ] && ls "$CC_DIR"/*.jsonl >/dev/null 2>&1; then
+  AGENT=claude-code
+elif command -v opencode >/dev/null 2>&1; then
+  AGENT=opencode
+else
+  echo "No supported agent transcript found"; exit 1
+fi
+echo "Agent: $AGENT"
+```
+
+Prefer `claude-code` when running inside Claude Code, otherwise fall back to `opencode`.
+
+## Step 2A: Claude Code Path
+
+### 2A.1 Find Latest Session JSONL
+
+Claude Code stores JSONL transcripts at `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`, where `<encoded-cwd>` is the absolute working dir with `/` replaced by `-`.
+
+```bash
+ENC_CWD="$(pwd | sed 's|/|-|g')"
+CC_DIR="$HOME/.claude/projects/$ENC_CWD"
+LATEST=$(ls -t "$CC_DIR"/*.jsonl 2>/dev/null | head -1)
+SESSION_ID=$(basename "$LATEST" .jsonl)
+echo "Session: $SESSION_ID"
+echo "File: $LATEST"
+```
+
+### 2A.2 Convert JSONL to Markdown
+
+Each line in the JSONL is one row. Relevant rows:
+
+| Top-level `type` | Meaning |
+|---|---|
+| `user` | `message.role=user`, `message.content` is a string OR a list of `tool_result` blocks |
+| `assistant` | `message.role=assistant`, `message.content` is a list of `text` / `thinking` / `tool_use` blocks; `message.model` carries the model id |
+| `attachment` / `last-prompt` / `permission-mode` / `file-history-snapshot` / `ai-title` | metadata — skip |
+
+Use this embedded Python converter (run it from the same shell):
+
+```python
+#!/usr/bin/env python3
+"""Claude Code JSONL → Markdown converter (matches the OpenCode export layout)."""
+import json, sys
+from datetime import datetime
+
+def ts(s):
+    if not s: return ""
+    try: return datetime.fromisoformat(s.replace("Z","+00:00")).strftime("%x, %X")
+    except Exception: return s
+
+def render_block(blk, thinking=True, tools=True):
+    t = blk.get("type")
+    if t == "text":
+        return blk.get("text","") + "\n\n"
+    if t == "thinking" and thinking:
+        text = blk.get("thinking","").strip()
+        return f"_Thinking:_\n\n{text}\n\n" if text else ""
+    if t == "tool_use" and tools:
+        out = f"**Tool: {blk.get('name','')}**\n\n"
+        if blk.get("input") is not None:
+            out += "**Input:**\n```json\n" + json.dumps(blk["input"], indent=2, ensure_ascii=False) + "\n```\n\n"
+        return out
+    if t == "tool_result" and tools:
+        c = blk.get("content","")
+        if isinstance(c, list):
+            c = "".join(p.get("text","") if isinstance(p, dict) else str(p) for p in c)
+        return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
+    return ""
+
+def convert(path, thinking=True, tools=False):
+    title, sid, created, updated = "Untitled", "", "", ""
+    body = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            try: o = json.loads(line)
+            except Exception: continue
+            tp = o.get("type")
+            if tp == "ai-title":
+                title = o.get("title", title) or title
+            if not sid: sid = o.get("sessionId","")
+            if tp in ("user","assistant"):
+                t_iso = o.get("timestamp","")
+                created = created or t_iso
+                updated = t_iso or updated
+                msg = o.get("message", {})
+                if msg.get("role") == "user":
+                    c = msg.get("content","")
+                    if isinstance(c, str):
+                        body.append("## User\n\n" + c + "\n\n---\n\n")
+                    elif isinstance(c, list):
+                        # tool_result blocks under user role
+                        rendered = "".join(render_block(b, thinking, tools) for b in c if isinstance(b, dict))
+                        if rendered.strip():
+                            body.append("## User\n\n" + rendered + "---\n\n")
+                else:
+                    model = msg.get("model","unknown")
+                    parts = msg.get("content", [])
+                    rendered = "".join(render_block(b, thinking, tools) for b in parts if isinstance(b, dict))
+                    if rendered.strip():
+                        body.append(f"## Assistant ({model})\n\n" + rendered + "---\n\n")
+    head = [
+        f"# {title}\n\n",
+        f"**Session ID:** {sid}\n",
+        f"**Created:** {ts(created)}\n",
+        f"**Updated:** {ts(updated)}\n\n",
+        "---\n\n",
+    ]
+    return "".join(head + body)
+
+if __name__ == "__main__":
+    print(convert(sys.argv[1]))
+```
+
+Save as `/tmp/cc_convert.py`, then:
+
+```bash
+MD=$(python3 /tmp/cc_convert.py "$LATEST")
+```
+
+### 2A.3 Upload via MCP
+
+Call the MCP tool from the agent (not shell):
+
+```
+wiki_submit_trajectory(
+  session_id="$SESSION_ID",
+  transcript=<MD>,
+  source="claude-code"
+)
+```
+
+## Step 2B: OpenCode Path
+
+### 2B.1 Get Current Session ID
 
 ```bash
 SESSION_ID=$(opencode session list -n 1 --format json | jq -r '.[0].id')
 ```
 
-### Step 2: Export Session JSON
+### 2B.2 Export Session JSON and Convert
 
 ```bash
-opencode export $SESSION_ID
+opencode export "$SESSION_ID"
 ```
 
-Returns complete JSON with all messages and parts.
-
-### Step 3: Convert JSON to Markdown
-
-Use embedded Python script (matches TUI `/export` format):
+Use the embedded Python below (matches the TUI `/export` format) to convert the JSON to Markdown:
 
 ```python
 #!/usr/bin/env python3
-"""
-OpenCode session JSON to Markdown converter.
-Matches the exact format of TUI /export command.
-"""
-import json
-import sys
+"""OpenCode session JSON → Markdown converter (matches TUI /export)."""
+import json, sys
 from datetime import datetime
 
-def format_timestamp(ms):
-    if ms == 0: return ""
-    return datetime.fromtimestamp(ms / 1000).strftime("%x, %X")
+def fmt_ts(ms):
+    if not ms: return ""
+    return datetime.fromtimestamp(ms/1000).strftime("%x, %X")
 
-def format_assistant_header(msg_info, include_metadata=True):
-    if not include_metadata: return "## Assistant\n\n"
-    agent = msg_info.get("agent", "build")
-    model_id = msg_info.get("model", {}).get("modelID", "unknown")
-    duration = ""
-    tc = msg_info.get("time", {}).get("created")
-    tf = msg_info.get("time", {}).get("completed")
-    if tc and tf: duration = f"{(tf - tc) / 1000:.1f}s"
-    parts = [agent.capitalize(), model_id]
-    if duration: parts.append(duration)
+def fmt_assistant(mi, meta=True):
+    if not meta: return "## Assistant\n\n"
+    agent = mi.get("agent","build")
+    model = mi.get("model",{}).get("modelID","unknown")
+    dur = ""
+    tc = mi.get("time",{}).get("created"); tf = mi.get("time",{}).get("completed")
+    if tc and tf: dur = f"{(tf-tc)/1000:.1f}s"
+    parts = [agent.capitalize(), model] + ([dur] if dur else [])
     return f"## Assistant ({' · '.join(parts)})\n\n"
 
-def format_part(part, thinking=True, tools=True):
-    t = part.get("type", "")
-    if t == "text" and not part.get("synthetic"):
-        return f"{part.get('text', '')}\n\n"
-    if t == "reasoning" and thinking:
-        return f"_Thinking:_\n\n{part.get('text', '')}\n\n"
+def fmt_part(p, thinking=True, tools=True):
+    t = p.get("type","")
+    if t == "text" and not p.get("synthetic"): return p.get("text","") + "\n\n"
+    if t == "reasoning" and thinking: return f"_Thinking:_\n\n{p.get('text','')}\n\n"
     if t == "tool" and tools:
-        name = part.get("tool", "")
-        r = f"**Tool: {name}**\n"
-        s = part.get("state", {})
-        if s.get("input"): r += f"\n**Input:**\n```json\n{json.dumps(s['input'], indent=2)}\n```\n"
+        s = p.get("state",{})
+        out = f"**Tool: {p.get('tool','')}**\n"
+        if s.get("input"): out += "\n**Input:**\n```json\n" + json.dumps(s["input"], indent=2) + "\n```\n"
         if s.get("status") == "completed" and s.get("output"):
-            r += f"\n**Output:**\n```\n{s['output'][:500]}\n```\n"
-        r += "\n"
-        return r
+            out += "\n**Output:**\n```\n" + s["output"][:500] + "\n```\n"
+        return out + "\n"
     return ""
 
-def format_transcript(json_str, thinking=True, tools=False, metadata=True):
-    data = json.loads(json_str)
-    info = data.get("info", {})
-    msgs = data.get("messages", [])
-    lines = [
-        f"# {info.get('title', 'Untitled')}\n\n",
-        f"**Session ID:** {info.get('id', '')}\n",
-        f"**Created:** {format_timestamp(info.get('time', {}).get('created', 0))}\n",
-        f"**Updated:** {format_timestamp(info.get('time', {}).get('updated', 0))}\n\n",
+def convert(s):
+    d = json.loads(s); info = d.get("info",{}); msgs = d.get("messages",[])
+    head = [
+        f"# {info.get('title','Untitled')}\n\n",
+        f"**Session ID:** {info.get('id','')}\n",
+        f"**Created:** {fmt_ts(info.get('time',{}).get('created',0))}\n",
+        f"**Updated:** {fmt_ts(info.get('time',{}).get('updated',0))}\n\n",
         "---\n\n",
     ]
+    body = []
     for m in msgs:
-        mi = m.get("info", {})
-        ps = m.get("parts", [])
-        lines.append("## User\n\n" if mi.get("role") == "user" else format_assistant_header(mi, metadata))
-        for p in ps:
-            lines.append(format_part(p, thinking, tools))
-        lines.append("---\n\n")
-    return "".join(lines)
+        mi = m.get("info",{}); ps = m.get("parts",[])
+        body.append("## User\n\n" if mi.get("role")=="user" else fmt_assistant(mi))
+        for p in ps: body.append(fmt_part(p))
+        body.append("---\n\n")
+    return "".join(head + body)
 
 if __name__ == "__main__":
-    content = sys.stdin.read() if len(sys.argv) == 1 else open(sys.argv[1]).read()
-    print(format_transcript(content))
+    print(convert(sys.stdin.read() if len(sys.argv)==1 else open(sys.argv[1]).read()))
 ```
 
-Run conversion:
 ```bash
-opencode export $SESSION_ID | python3 -c "$(cat <<'SCRIPT'
-... embedded script ...
-SCRIPT
-)"
+MD=$(opencode export "$SESSION_ID" | python3 /tmp/oc_convert.py)
 ```
 
-### Step 4: Upload via MCP
+### 2B.3 Upload via MCP
 
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  transcript="<converted Markdown>",
+  transcript=<MD>,
   source="opencode"
 )
 ```
 
-### Step 5: Report Result
+## Step 3: Report Result
 
 ```
-✓ 上传成功
+✓ Uploaded
+- Agent:   claude-code | opencode
 - Session: {session_id}
-- Path: raw/sessions/uploaded/{session_id}.md
-- Processing: knowledge_engine auto-sanitize + knowledge extraction
-```
-
-## Output Format
-
-The transcript matches TUI `/export` format:
-
-```markdown
-# {title}
-
-**Session ID:** {id}
-**Created:** {timestamp}
-**Updated:** {timestamp}
-
----
-
-## User
-
-{user text}
-
----
-
-## Assistant (Build · GLM-5 · 12.5s)
-
-_Thinking:_
-
-{reasoning}
-
-**Tool: read**
-
-**Input:**
-```json
-{"filePath": "..."}
-```
-
-**Output:**
-```
-{tool output}
-```
-
----
-
-...
+- Path:    raw/sessions/uploaded/{session_id}.md
+- Pipeline: knowledge_engine auto-sanitize + extraction
 ```
 
 ## Domain Requirement
 
-Transcript must contain "Ascend C" or "AscendC" keywords.
-
-Without keywords → goes to `raw/sessions/to_review/` for manual review.
+The transcript must mention "Ascend C" or "AscendC". Otherwise the server routes it to `raw/sessions/to_review/` for manual triage — that is expected, not an error.
 
 ## Error Handling
 
 | Scenario | Handling |
-|----------|----------|
-| OpenCode CLI unavailable | "Install opencode first" |
-| MCP not running | "Start MCP Server first" |
+|---|---|
+| No `~/.claude/projects/<cwd>/*.jsonl` and no `opencode` CLI | "No agent transcript source found — run from inside Claude Code or install opencode" |
+| MCP not configured | "Run `/setup-ascendc-wiki` first" |
+| `wiki_submit_trajectory` not registered | "MCP tool missing — restart agent after setup" |
 | Empty transcript | "No messages to upload" |
-| JSON parse error | "Invalid session data" |
-| Upload API error | "Network error, retry later" |
+| JSON/JSONL parse error | "Skipping malformed line, continuing" |
+| Network/API error | "Network error, retry later" |
 
 ## Notes
 
-- **Zero user interaction** — Agent handles all steps automatically
-- **Format matches `/export`** — Same Markdown structure as TUI export
-- **JSON to MD conversion** — Deterministic, no LLM involved
-- **Tool details excluded by default** — Keep output compact (can enable if needed)
-- **Thinking included** — Preserves reasoning blocks
+- **Zero user interaction** — the agent runs all steps itself.
+- **Format parity** — Claude Code and OpenCode transcripts both render to the same Markdown layout.
+- **Tool details excluded by default** — keeps the upload compact; flip the `tools` flag in the converter to include them.
+- **Thinking included** — preserves `thinking` blocks (Claude Code) and `reasoning` parts (OpenCode).
+- **Agent detection is path-based** — the Claude Code branch fires whenever a transcript exists for the current cwd, regardless of which CLI invoked the skill.

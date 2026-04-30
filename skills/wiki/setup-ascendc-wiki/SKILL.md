@@ -57,14 +57,21 @@ Verify MCP Server is running:
 
 Check which agent the user is using:
 
-| Agent | Config file location |
-|-------|---------------------|
-| OpenCode | `.opencode/opencode.json` in workspace |
-| Claude Code (Desktop) | `claude_desktop_config.json` in app support |
-| Claude Code (CLI) | `.mcp.json` in project root |
-| Cursor | MCP settings in editor |
+| Agent | Config file location | Easiest install |
+|-------|---------------------|-----------------|
+| OpenCode | `.opencode/opencode.json` in workspace | Edit JSON (see Step 3) |
+| Claude Code (CLI) | `.mcp.json` in project root | **`claude mcp add` one-liner** (preferred) |
+| Claude Code (Desktop) | `claude_desktop_config.json` in app support | Edit JSON (see Step 3) |
+| Cursor | MCP settings in editor | Editor UI |
 
-Use glob/read to check which exists.
+**Quick detection signals**:
+- `command -v claude` → Claude Code CLI is installed
+- `command -v opencode` → OpenCode CLI is installed
+- File at `.opencode/opencode.json` → OpenCode workspace
+- File at `.mcp.json` → Claude Code project already has MCP config
+- Running inside Claude Code? Check `~/.claude/projects/<pwd-with-slashes-as-dashes>/` exists
+
+Prefer the agent the user is currently invoking the skill from.
 
 ### Step 3: Present Configuration
 
@@ -84,15 +91,31 @@ Show user the configuration needed:
 }
 ```
 
-**For Claude Code CLI** (`.mcp.json`):
+**For Claude Code CLI** — preferred one-liner (writes `.mcp.json` for you):
+
+```bash
+# Project scope (commits to repo via .mcp.json)
+claude mcp add --transport http --scope project ascendc-wiki http://localhost:3000/mcp
+
+# Or user scope (cross-project, lives in user settings)
+claude mcp add --transport http --scope user ascendc-wiki http://localhost:3000/mcp
+```
+
+Equivalent hand-written `.mcp.json` if the user prefers to edit JSON directly:
 ```json
 {
   "mcpServers": {
     "ascendc-wiki": {
+      "type": "http",
       "url": "http://localhost:3000/mcp"
     }
   }
 }
+```
+
+After running the command (or saving the file), restart Claude Code and verify with:
+```bash
+claude mcp list           # should show ascendc-wiki as connected
 ```
 
 **For Claude Desktop** (`claude_desktop_config.json`):
