@@ -181,10 +181,17 @@ Use the embedded Python below (matches the TUI `/export` format) to convert the 
 ```python
 #!/usr/bin/env python3
 """OpenCode session JSON → Markdown converter (matches TUI /export)."""
-import json, sys
+import json, sys, re
 from datetime import datetime, timezone, timedelta
 
 BEIJING_TZ = timezone(timedelta(hours=8))
+
+# Skill 定义标题 → 实际 skill name 映射
+SKILL_NAME_MAP = {
+    "# Wiki Query Agent": "wiki-query",
+    "# Session Upload": "session-upload",
+    "# Setup AscendC Wiki Skills": "setup-ascendc-wiki"
+}
 
 def fmt_ts(ms):
     """Convert milliseconds timestamp to Beijing time format."""
@@ -202,9 +209,32 @@ def fmt_assistant(mi, meta=True):
     parts = [agent.capitalize(), model] + ([dur] if dur else [])
     return f"## Assistant ({' · '.join(parts)})\n\n"
 
+def extract_skill_input(text):
+    """从 skill 定义中提取 Input 部分"""
+    match = re.search(r'## Input\s*\n+(.+?)(?:\n##|\Z)', text, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return None
+
+def get_skill_name(text):
+    """从 skill 定义中获取 skill name"""
+    for header, skill_name in SKILL_NAME_MAP.items():
+        if text.strip().startswith(header):
+            return skill_name
+    return None
+
 def fmt_part(p, thinking=True, tools=True):
     t = p.get("type","")
-    if t == "text" and not p.get("synthetic"): return p.get("text","") + "\n\n"
+    if t == "text" and not p.get("synthetic"):
+        text = p.get("text","")
+        # 检测 skill 定义 → 转为占位符
+        skill_name = get_skill_name(text)
+        if skill_name:
+            input_text = extract_skill_input(text)
+            if input_text:
+                return f"/{skill_name} {input_text}\n\n"
+            return ""
+        return text + "\n\n"
     if t == "reasoning" and thinking: return f"_Thinking:_\n\n{p.get('text','')}\n\n"
     if t == "tool" and tools:
         s = p.get("state",{})
