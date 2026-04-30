@@ -238,8 +238,30 @@ def fmt_part(p, thinking=True, tools=True):
     if t == "reasoning" and thinking: return f"_Thinking:_\n\n{p.get('text','')}\n\n"
     if t == "tool" and tools:
         s = p.get("state",{})
-        out = f"**Tool: {p.get('tool','')}**\n"
-        if s.get("input"): out += "\n**Input:**\n```json\n" + json.dumps(s["input"], indent=2) + "\n```\n"
+        tool_name = p.get('tool','')
+        out = f"**Tool: {tool_name}**\n"
+        
+        # 过滤 skill tool 的 Output（不记录 SKILL.md 定义）
+        if tool_name == "skill" and s.get("status") == "completed" and s.get("output"):
+            output = s.get("output","")
+            if "<skill_content" in output:
+                # 只记录 skill name，不记录完整内容
+                match = re.search(r'name="([^"]+)"', output)
+                if match:
+                    out += f"\n**Output:** Loaded skill: {match.group(1)}\n"
+                return out + "\n"
+        
+        # 过滤 converter 脚本的写入
+        if tool_name == "write" and s.get("input"):
+            input_data = s.get("input",{})
+            file_path = input_data.get("filePath","")
+            if file_path in ("/tmp/oc_convert.py", "/tmp/cc_convert.py"):
+                out += f"\n**Input:** filePath: {file_path}\n"
+                return out + "\n"
+        
+        # 正常 tool：记录 Input 和 Output
+        if s.get("input"): 
+            out += "\n**Input:**\n```json\n" + json.dumps(s["input"], indent=2) + "\n```\n"
         if s.get("status") == "completed" and s.get("output"):
             out += "\n**Output:**\n```\n" + s["output"][:500] + "\n```\n"
         return out + "\n"
