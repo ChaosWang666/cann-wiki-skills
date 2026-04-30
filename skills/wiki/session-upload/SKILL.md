@@ -1,6 +1,6 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. One command: /skills → session-upload (or `/session-upload` in Claude Code)."
+description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. Direct command: `/session-upload`."
 ---
 
 # Session Upload
@@ -65,11 +65,20 @@ Use this embedded Python converter (run it from the same shell):
 #!/usr/bin/env python3
 """Claude Code JSONL → Markdown converter (matches the OpenCode export layout)."""
 import json, sys
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Beijing time: UTC+8
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 def ts(s):
+    """Convert ISO timestamp to Beijing time format."""
     if not s: return ""
-    try: return datetime.fromisoformat(s.replace("Z","+00:00")).strftime("%x, %X")
+    try:
+        # Parse as UTC (Z suffix)
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        # Convert to Beijing time
+        dt_beijing = dt.astimezone(BEIJING_TZ)
+        return dt_beijing.strftime("%Y-%m-%d %H:%M:%S")
     except Exception: return s
 
 def render_block(blk, thinking=True, tools=True):
@@ -173,11 +182,15 @@ Use the embedded Python below (matches the TUI `/export` format) to convert the 
 #!/usr/bin/env python3
 """OpenCode session JSON → Markdown converter (matches TUI /export)."""
 import json, sys
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+BEIJING_TZ = timezone(timedelta(hours=8))
 
 def fmt_ts(ms):
+    """Convert milliseconds timestamp to Beijing time format."""
     if not ms: return ""
-    return datetime.fromtimestamp(ms/1000).strftime("%x, %X")
+    dt = datetime.fromtimestamp(ms/1000, tz=BEIJING_TZ)
+    return dt.strftime("%Y-%m-%d %H:%M:%S")
 
 def fmt_assistant(mi, meta=True):
     if not meta: return "## Assistant\n\n"

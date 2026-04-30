@@ -109,12 +109,39 @@ Returns full content:
 ### Phase D: Synthesize Answer
 
 Combine multi-page info into structured answer:
-- Cite sources: `[Source: wiki/path/to/page.md]`
-- COMPARISON → comparison table
-- HOW-TO → step list + code examples
-- Use tables, code blocks, structured format
 
-List reference pages with Q-Value/similarity at end.
+**Citation rules (MUST follow):**
+1. **Every fact must cite its source inline** — format: `[Source: wiki/path/to/page.md]`
+2. Place citation immediately after the fact/section, not at the end
+3. For multi-source facts: `[Source: wiki/path1.md, wiki/path2.md]`
+
+**Example (correct):**
+```markdown
+### 对齐要求 [Source: wiki/static/ascendc/guide/api/vector-compute.md]
+
+DataCopy 搬运长度必须 **32 字节对齐**。
+
+| 要求 | 说明 |
+| DataCopy 长度 | 32B 对齐 |
+```
+
+**Example (incorrect):**
+```markdown
+### 对齐要求
+
+DataCopy 搬运长度必须 **32 字节对齐**。
+
+---
+
+**References:**
+- wiki/static/ascendc/guide/api/vector-compute.md
+```
+
+**Content structure:**
+- COMPARISON → comparison table (each row cites its source)
+- HOW-TO → step list + code examples (cite source for each step)
+- Use tables, code blocks, structured format
+- End with References summary (optional, but inline citations are mandatory)
 
 ### Phase E: File-Back Decision
 
@@ -135,7 +162,7 @@ If file-back:
 At answer end, include a brief footer:
 
 ```
-💡 Use `/skills` → `session-upload` to save this session
+💡 Use `/session-upload` to save this session to Wiki
 ```
 
 When user invokes session-upload skill, call MCP `wiki_submit_trajectory`:
@@ -173,7 +200,7 @@ Trajectory stored at `raw/sessions/uploaded/{session_id}.jsonl`.
 - wiki/path2.md
 - wiki/path3.md
 
-💡 Use `/skills` → `session-upload` to save this session
+💡 Use `/session-upload` to save this session to Wiki
 ```
 
 ## Notes
