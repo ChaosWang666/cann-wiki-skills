@@ -13,7 +13,7 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
 ```
 
 指定 `-a` 参数的好处：直接通过 `/setup-ascendc-wiki`、`/wiki-query`、`/session-upload` 使用 skill。
-（Claude Code 有命令补全提示，OpenCode 需手动输入完整名称）
+（Claude Code 有命令补全提示；OpenCode 需手动输入完整名称并加空格，否则提示 "No matching items"）
 
 安装后运行 `/setup-ascendc-wiki` 配置 MCP 连接。
 
