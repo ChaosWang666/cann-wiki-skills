@@ -8,8 +8,9 @@ AscendC Kernel Wiki 知识检索和会话轨迹上传的 LLM Agent skills。
 # 安装到 Claude Code
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 
-# 安装到 OpenCode
+# 安装到 OpenCode（需要额外步骤）
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
+mv .agents/skills .opencode/skills  # 移动到 OpenCode 原生路径，支持直接 /skill-name
 ```
 
 指定 `-a` 参数的好处：直接通过 `/setup-ascendc-wiki`、`/wiki-query`、`/session-upload` 使用 skill。
