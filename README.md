@@ -5,24 +5,16 @@ AscendC Kernel Wiki 知识检索和会话轨迹上传的 LLM Agent skills。
 ## 快速安装
 
 ```bash
-npx skills@latest add qianbi1999/ascendc-wiki-skills
-```
-
-安装时会让你选择 agent 平台（多选），默认选中 Claude Code / OpenCode / Codex。
-
-**推荐指定特定 agent（避免安装到多个平台）：**
-```bash
-# 只安装到 Claude Code
+# 安装到 Claude Code
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 
-# 只安装到 OpenCode
+# 安装到 OpenCode
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
-
-# 安装到多个 agent
-npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code,opencode
 ```
 
-安装后选择 **setup-ascendc-wiki**，然后是 wiki-query 和 session-upload。
+指定 `-a` 参数的好处：直接通过 `/setup-ascendc-wiki`、`/wiki-query`、`/session-upload` 使用 skill。
+
+安装后运行 `/setup-ascendc-wiki` 配置 MCP 连接。
 
 ## 重要提示：先运行 Setup！
 
