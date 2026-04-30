@@ -5,16 +5,15 @@ AscendC Kernel Wiki 知识检索和会话轨迹上传的 LLM Agent skills。
 ## 快速安装
 
 ```bash
-# 安装到 Claude Code（可直接 /skill-name）
+# 安装到 Claude Code
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 
-# 安装到 OpenCode（需通过 /skills 触发）
+# 安装到 OpenCode
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
 ```
 
-**使用方式**：
-- **Claude Code**：直接 `/setup-ascendc-wiki`、`/wiki-query`、`/session-upload`
-- **OpenCode**：先 `/skills` 选择 skill，或让 agent 自动识别加载
+指定 `-a` 参数的好处：直接通过 `/setup-ascendc-wiki`、`/wiki-query`、`/session-upload` 使用 skill。
+（Claude Code 有 TUI 补全，OpenCode 需手动输入完整名称）
 
 安装后运行 `/setup-ascendc-wiki` 配置 MCP 连接。
 
@@ -85,9 +84,7 @@ IS_SANDBOX=1 python server.py --port 3000 --host 0.0.0.0
 ```
 1. 安装 skills（见上方快速安装）
 2. 启动 MCP Server：cd mcp-server && IS_SANDBOX=1 python server.py --port 3000
-3. 运行 setup：
-   - Claude Code: /setup-ascendc-wiki
-   - OpenCode: /skills → 选择 setup-ascendc-wiki
+3. 运行 setup：/setup-ascendc-wiki
 4. 重启 agent
 5. 使用 wiki-query："AscendC 编程模型是什么？"
 6. 上传轨迹：/session-upload

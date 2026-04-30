@@ -1,6 +1,6 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. Claude Code: /session-upload. OpenCode: /skills → select session-upload."
+description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. Trigger: `/session-upload`."
 ---
 
 # Session Upload
@@ -9,7 +9,7 @@ Auto-upload the current session transcript to the AscendC Wiki knowledge base. W
 
 ## Prerequisites
 
-1. MCP Server is running and `wiki_submit_trajectory` is available (run setup-ascendc-wiki skill first: Claude Code: `/setup-ascendc-wiki`, OpenCode: `/skills` → select setup-ascendc-wiki).
+1. MCP Server is running and `wiki_submit_trajectory` is available (run `/setup-ascendc-wiki` first).
 2. Either OpenCode CLI (`opencode`) is installed, OR the session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
 3. Session contains "Ascend C" / "AscendC" keywords (otherwise it lands in `raw/sessions/to_review/` for manual review).
 
@@ -269,7 +269,7 @@ The transcript must mention "Ascend C" or "AscendC". Otherwise the server routes
 | Scenario | Handling |
 |---|---|
 | No `~/.claude/projects/<cwd>/*.jsonl` and no `opencode` CLI | "No agent transcript source found — run from inside Claude Code or install opencode" |
-| MCP not configured | "Run setup-ascendc-wiki skill first (Claude Code: `/setup-ascendc-wiki`, OpenCode: `/skills` → select setup-ascendc-wiki)" |
+| MCP not configured | "Run `/setup-ascendc-wiki` first" |
 | `wiki_submit_trajectory` not registered | "MCP tool missing — restart agent after setup" |
 | Empty transcript | "No messages to upload" |
 | JSON/JSONL parse error | "Skipping malformed line, continuing" |

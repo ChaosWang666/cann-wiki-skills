@@ -1,6 +1,6 @@
 ---
 name: wiki-query
-description: "AscendC Wiki knowledge retrieval. MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Claude Code: /wiki-query. OpenCode: /skills → select wiki-query."
+description: "AscendC Wiki knowledge retrieval. MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/wiki-query`"
 ---
 
 # Wiki Query Agent
@@ -42,7 +42,7 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 - User requests comparison (e.g., "ElementwiseSch vs manual pipeline")
 - User requests how-to (e.g., "how to implement activation operator")
 - User requests coverage (e.g., "which operators use reduction")
-- User explicitly triggers the skill (Claude Code: `/wiki-query`, OpenCode: `/skills` → select wiki-query)
+- User explicitly triggers `/wiki-query` or says "search wiki"
 
 **Anti-pattern (DO NOT do this):**
 ```
@@ -52,8 +52,9 @@ mcp__ascendc-wiki__wiki_search(query="conv2d", limit=5)  # ❌ bypasses skill
 ```
 
 **Correct pattern:**
-- Claude Code: `/wiki-query conv2d implementation`
-- OpenCode: `/skills` → select wiki-query, then ask "conv2d implementation"
+```
+/wiki-query conv2d implementation  # ✅ triggers skill workflow
+```
 
 ## Input
 
@@ -186,7 +187,7 @@ If file-back:
 At answer end, include a brief footer:
 
 ```
-💡 Save this session to Wiki: Claude Code `/session-upload`, OpenCode `/skills` → select session-upload
+💡 Use `/session-upload` to save this session to Wiki
 ```
 
 When user invokes session-upload skill, call MCP `wiki_submit_trajectory`:
@@ -224,7 +225,7 @@ Trajectory stored at `raw/sessions/uploaded/{session_id}.jsonl`.
 - wiki/path2.md
 - wiki/path3.md
 
-💡 Save this session to Wiki: Claude Code `/session-upload`, OpenCode `/skills` → select session-upload
+💡 Use `/session-upload` to save this session to Wiki
 ```
 
 ## Notes
