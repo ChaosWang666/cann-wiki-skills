@@ -116,9 +116,9 @@ Equivalent hand-written `.mcp.json` if the user prefers to edit JSON directly:
 }
 ```
 
-After running the command (or saving the file), restart Claude Code and verify with:
+After running the command (or saving the file), restart your agent (`/exit`) and verify with:
 ```bash
-claude mcp list           # should show ascendc-wiki as connected
+claude mcp list           # should show ascendc-wiki as connected (Claude Code)
 ```
 
 **For Claude Desktop** (`claude_desktop_config.json`):
@@ -151,7 +151,7 @@ Then write the appropriate config file.
 
 ### Step 5: Mandatory Restart
 
-**CRITICAL: User MUST restart Claude Code after config.**
+**CRITICAL: User MUST restart their agent after config.**
 
 Even if `claude mcp list` shows "Connected", MCP tools will NOT work until restart.
 
