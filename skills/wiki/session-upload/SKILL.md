@@ -15,18 +15,20 @@ Auto-upload the current session transcript to the AscendC Wiki knowledge base. W
 
 ## Step 1: Detect Agent
 
-Run a shell check to decide which path to take. **Priority: current running agent > historical transcript files**.
+Run a shell check to decide which path to take. **Priority: project config > active session > historical files**.
 
 ```bash
-# Method 1: Check running processes (most reliable)
-if pgrep -f "opencode" > /dev/null 2>&1; then
+# Method 1: Check project config files (most reliable, user-controlled)
+if [ -f ".opencode/opencode.json" ] || [ -f ".agents/skills" ]; then
   AGENT=opencode
-elif pgrep -f "claude" > /dev/null 2>&1 && ! pgrep -f "opencode" > /dev/null 2>&1; then
+elif [ -f ".mcp.json" ] || [ -f ".claude/settings.json" ] || [ -d ".claude/INGEST" ] || [ -d ".claude/QUERY" ] || [ -d ".claude/LINT" ]; then
   AGENT=claude-code
-# Method 2: Check OpenCode session database
+
+# Method 2: Check OpenCode session database (active sessions)
 elif command -v opencode >/dev/null 2>&1 && opencode session list -n 1 --format json 2>/dev/null | jq -e '.[0].id' > /dev/null 2>&1; then
   AGENT=opencode
-# Method 3: Fallback to Claude Code transcript directory
+
+# Method 3: Fallback to Claude Code transcript directory (historical)
 else
   ENC_CWD="$(pwd | sed 's|/|-|g')"
   CC_DIR="$HOME/.claude/projects/$ENC_CWD"
@@ -40,9 +42,9 @@ echo "Agent: $AGENT"
 ```
 
 **Detection priority**:
-1. Running process check (pgrep) — most reliable for current session
-2. OpenCode session database — confirms OpenCode has active sessions  
-3. Claude Code transcript directory — fallback for historical sessions
+1. **Project config files** — User-controlled, most reliable. Create `.opencode/opencode.json` for OpenCode projects, `.mcp.json` or `.claude/` for Claude Code projects.
+2. **OpenCode session database** — Confirms OpenCode has active sessions.
+3. **Claude Code transcript directory** — Fallback for historical sessions.
 
 ## Step 2A: Claude Code Path
 
@@ -343,4 +345,4 @@ The transcript must mention "Ascend C" or "AscendC". Otherwise the server routes
 - **Format parity** — Claude Code and OpenCode transcripts both render to the same Markdown layout.
 - **Tool details excluded by default** — keeps the upload compact; flip the `tools` flag in the converter to include them.
 - **Thinking included** — preserves `thinking` blocks (Claude Code) and `reasoning` parts (OpenCode).
-- **Process-based detection** — checks running processes first, then session database, then transcript directory.
+- **Config-based detection** — checks project config files first (user-controlled), then session database, then transcript directory. Create `.opencode/opencode.json` for OpenCode projects, `.mcp.json` or `.claude/` for Claude Code projects.
