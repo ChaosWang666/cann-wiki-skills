@@ -182,9 +182,26 @@ python3 /tmp/cc_convert.py "$LATEST" > /tmp/session_output.md
 
 ### 2A.3 Upload via MCP
 
-Call MCP tool with file path (avoids Claude Code auto-truncation):
+**CRITICAL: Upload the converted file directly. DO NOT summarize, truncate, or modify the content.**
+
+The converter output at `/tmp/session_output.md` is the complete trajectory. Upload it verbatim:
+
+1. Read the file content from `/tmp/session_output.md`
+2. Call MCP tool with the exact content (no modifications)
 
 ```
+wiki_submit_trajectory(
+  session_id="$SESSION_ID",
+  file_path="/tmp/session_output.md"
+)
+```
+
+**DO NOT**:
+- Replace content with summaries like "[Full session uploaded]"
+- Truncate the content
+- Modify any part of the trajectory
+
+The trajectory must be preserved exactly as converted.
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
   file_path="/tmp/session_output.md",
@@ -353,15 +370,16 @@ opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py > /tmp/se
 
 ### 2B.3 Upload via MCP
 
-Call MCP tool with file path:
+**CRITICAL: Upload the converted file directly. DO NOT summarize, truncate, or modify the content.**
 
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  file_path="/tmp/session_output.md",
-  source="opencode"
+  file_path="/tmp/session_output.md"
 )
 ```
+
+Upload the file at `/tmp/session_output.md` verbatim - no modifications allowed.
 
 ## Step 3: Report Result
 
