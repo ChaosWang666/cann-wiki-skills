@@ -2,7 +2,7 @@
 
 AscendC Kernel Wiki 知识检索和会话轨迹上传的 LLM Agent skills。
 
-**新手开箱即用**：安装 skills → 运行 `/setup-ascendc-wiki` → 重启 → 开始提问！
+**新手开箱即用**：安装 skills → 运行 `/setup-ascendc-wiki` → `/exit` 重启 → 开始提问！
 
 ---
 
@@ -29,12 +29,11 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
 
 ### 3. **重启 Agent**（必须！）
 
-```bash
-# Claude Code: Ctrl+D 退出，重新启动
-# OpenCode: 重启终端
+```
+/exit  # 退出当前会话（OpenCode 和 Claude Code 都支持）
 ```
 
-不重启 MCP 工具无法使用。
+然后重新启动 agent。不重启 MCP 工具无法使用。
 
 ### 4. 开始使用
 
@@ -141,7 +140,7 @@ Agent:
 
 **解决**:
 1. 确认已运行 `/setup-ascendc-wiki`
-2. **重启 agent**（最重要！）
+2. **输入 `/exit` 重启 agent**（最重要！）
 3. 验证：运行 `/mcp` 应显示 ascendc-wiki
 
 ---
@@ -169,7 +168,7 @@ Agent:
 **原因**: 未重启或配置文件位置错误
 
 **解决**:
-1. 退出并重启 agent
+1. 输入 `/exit` 退出并重启 agent
 2. 检查配置文件：
    - Claude Code: 项目根 `.mcp.json`
    - OpenCode: `.opencode/opencode.json`

@@ -162,15 +162,17 @@ Tell user explicitly:
 配置文件已写入，但 MCP 工具需要重启才能生效。
 
 ### 必须操作
-1. **退出当前 Claude Code 会话** (Ctrl+D 或 `/exit`)
-2. **重新启动 Claude Code**
-3. 验证 MCP 工具可用：运行 `/mcp` 应显示 ascendc-wiki
+1. **退出当前 agent 会话**：输入 `/exit`（OpenCode 和 Claude Code 都支持）
+2. **重新启动 agent**
+3. 验证 MCP 工具可用：
+   - Claude Code：运行 `/mcp` 应显示 ascendc-wiki
+   - OpenCode：MCP 工具应出现在工具列表中
 
 ### 不重启的后果
-- `/mcp` 显示 "No MCP servers configured"
+- `/mcp` 显示 "No MCP servers configured" (Claude Code)
 - wiki 工具无法调用
 
-请现在重启，重启后 MCP 工具才能正常使用。
+**请现在执行 `/exit` 重启**。
 ```
 
 **DO NOT** claim setup is complete without restart.
