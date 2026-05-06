@@ -177,20 +177,22 @@ if __name__ == "__main__":
 Save as `/tmp/cc_convert.py`, then:
 
 ```bash
-MD=$(python3 /tmp/cc_convert.py "$LATEST")
+python3 /tmp/cc_convert.py "$LATEST" > /tmp/session_output.md
 ```
 
 ### 2A.3 Upload via MCP
 
-Call the MCP tool from the agent (not shell):
+Read the converted file and call MCP tool with JSON-encoded content:
 
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  transcript=<MD>,
+  content=<read file /tmp/session_output.md as raw string>,
   source="claude-code"
 )
 ```
+
+**IMPORTANT**: Pass content as raw string, not through shell variable interpolation, to avoid `<command-message>` tags being parsed by Claude Code.
 
 ## Step 2B: OpenCode Path
 
@@ -354,7 +356,7 @@ MD=$(opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py)
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  transcript=<MD>,
+  content=<MD>,
   source="opencode"
 )
 ```
