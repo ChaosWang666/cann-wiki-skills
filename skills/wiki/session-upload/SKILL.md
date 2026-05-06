@@ -75,28 +75,41 @@ Use this embedded Python converter (run it from the same shell):
 
 ```python
 #!/usr/bin/env python3
-"""Claude Code JSONL → Markdown converter (matches the OpenCode export layout)."""
-import json, sys
+"""Claude Code JSONL → Markdown converter."""
+import json, sys, re
 from datetime import datetime, timezone, timedelta
 
-# Beijing time: UTC+8
 BEIJING_TZ = timezone(timedelta(hours=8))
 
 def ts(s):
-    """Convert ISO timestamp to Beijing time format."""
     if not s: return ""
     try:
-        # Parse as UTC (Z suffix)
         dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-        # Convert to Beijing time
-        dt_beijing = dt.astimezone(BEIJING_TZ)
-        return dt_beijing.strftime("%Y-%m-%d %H:%M:%S")
-    except Exception: return s
+        return dt.astimezone(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
+    except: return s
+
+def get_skill_name(text):
+    """从 skill 定义文本获取 name"""
+    if not text.strip().startswith("Base directory for this skill:"):
+        return None
+    match = re.search(r'\n#\s+(.+?)\n', text)
+    if match:
+        title = match.group(1).strip()
+        return {
+            "Setup AscendC Wiki Skills": "setup-ascendc-wiki",
+            "Wiki Query Agent": "wiki-query",
+            "Session Upload": "session-upload"
+        }.get(title, title.lower().replace(" ", "-"))
+    return None
 
 def render_block(blk, thinking=True, tools=True):
     t = blk.get("type")
     if t == "text":
-        return blk.get("text","") + "\n\n"
+        text = blk.get("text","")
+        skill = get_skill_name(text)
+        if skill:
+            return f"/{skill}\n\n"
+        return text + "\n\n"
     if t == "thinking" and thinking:
         text = blk.get("thinking","").strip()
         return f"_Thinking:_\n\n{text}\n\n" if text else ""
@@ -109,37 +122,36 @@ def render_block(blk, thinking=True, tools=True):
         c = blk.get("content","")
         if isinstance(c, list):
             c = "".join(p.get("text","") if isinstance(p, dict) else str(p) for p in c)
-        # Claude Code 的 MCP tool_result 也不截断（知识来源）
-        tool_name = blk.get("name", "")
-        if tool_name.startswith("ascendc-wiki_"):
+        # MCP wiki 工具返回 summary，不截断
+        if blk.get("name", "").startswith("ascendc-wiki_"):
             return "**Tool Result:**\n```\n" + str(c) + "\n```\n\n"
-        else:
-            return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
+        return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
     return ""
 
-def convert(path, thinking=True, tools=False):
-    title, sid, created, updated = "Untitled", "", "", ""
+def convert(path, thinking=True, tools=True):
+    title, sid, cwd, created, updated = "Untitled", "", "", "", ""
     body = []
     with open(path, encoding="utf-8") as f:
         for line in f:
             try: o = json.loads(line)
-            except Exception: continue
+            except: continue
             tp = o.get("type")
             if tp == "ai-title":
-                title = o.get("title", title) or title
+                title = o.get("aiTitle", title)
             if not sid: sid = o.get("sessionId","")
+            if not cwd: cwd = o.get("cwd","")
             if tp in ("user","assistant"):
                 t_iso = o.get("timestamp","")
                 created = created or t_iso
                 updated = t_iso or updated
                 msg = o.get("message", {})
-                if msg.get("role") == "user":
-                    c = msg.get("content","")
-                    if isinstance(c, str):
-                        body.append("## User\n\n" + c + "\n\n---\n\n")
-                    elif isinstance(c, list):
-                        # tool_result blocks under user role
-                        rendered = "".join(render_block(b, thinking, tools) for b in c if isinstance(b, dict))
+                role = msg.get("role")
+                content = msg.get("content","")
+                if role == "user":
+                    if isinstance(content, str):
+                        body.append("## User\n\n" + content + "\n\n---\n\n")
+                    elif isinstance(content, list):
+                        rendered = "".join(render_block(b, thinking, tools) for b in content if isinstance(b, dict))
                         if rendered.strip():
                             body.append("## User\n\n" + rendered + "---\n\n")
                 else:
@@ -148,14 +160,15 @@ def convert(path, thinking=True, tools=False):
                     rendered = "".join(render_block(b, thinking, tools) for b in parts if isinstance(b, dict))
                     if rendered.strip():
                         body.append(f"## Assistant ({model})\n\n" + rendered + "---\n\n")
-    head = [
+    return "".join([
         f"# {title}\n\n",
         f"**Session ID:** {sid}\n",
+        f"**Directory:** {cwd}\n",
         f"**Created:** {ts(created)}\n",
         f"**Updated:** {ts(updated)}\n\n",
         "---\n\n",
-    ]
-    return "".join(head + body)
+        "".join(body)
+    ])
 
 if __name__ == "__main__":
     print(convert(sys.argv[1]))
