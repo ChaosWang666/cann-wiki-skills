@@ -109,7 +109,12 @@ def render_block(blk, thinking=True, tools=True):
         c = blk.get("content","")
         if isinstance(c, list):
             c = "".join(p.get("text","") if isinstance(p, dict) else str(p) for p in c)
-        return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
+        # Claude Code 的 MCP tool_result 也不截断（知识来源）
+        tool_name = blk.get("name", "")
+        if tool_name.startswith("ascendc-wiki_"):
+            return "**Tool Result:**\n```\n" + str(c) + "\n```\n\n"
+        else:
+            return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
     return ""
 
 def convert(path, thinking=True, tools=False):
@@ -279,12 +284,28 @@ def fmt_part(p, thinking=True, tools=True):
         if s.get("input"): 
             out += "\n**Input:**\n```json\n" + json.dumps(s["input"], indent=2) + "\n```\n"
         if s.get("status") == "completed" and s.get("output"):
-            out += "\n**Output:**\n```\n" + s["output"][:500] + "\n```\n"
+            output = s["output"]
+            # MCP wiki 工具返回的是 summary，不截断（知识来源完整）
+            if tool_name.startswith("ascendc-wiki_"):
+                out += "\n**Output:**\n```\n" + output + "\n```\n"
+            else:
+                out += "\n**Output:**\n```\n" + output[:500] + "\n```\n"
         return out + "\n"
     return ""
 
 def convert(s):
-    d = json.loads(s); info = d.get("info",{}); msgs = d.get("messages",[])
+    # 处理 stdin 中可能混入的非 JSON 行（如 opencode export 的 "Exporting session:" 消息）
+    lines = s.strip().split('\n')
+    json_content = None
+    for line in lines:
+        if line.startswith('{'):
+            # 找到 JSON 开始，重新拼接剩余行
+            json_content = '\n'.join(lines[lines.index(line):])
+            break
+    if json_content is None:
+        raise ValueError("No valid JSON found in input")
+    
+    d = json.loads(json_content); info = d.get("info",{}); msgs = d.get("messages",[])
     head = [
         f"# {info.get('title','Untitled')}\n\n",
         f"**Session ID:** {info.get('id','')}\n",
@@ -302,11 +323,17 @@ def convert(s):
     return "".join(head + body)
 
 if __name__ == "__main__":
-    print(convert(sys.stdin.read() if len(sys.argv)==1 else open(sys.argv[1]).read()))
+    # 支持从 stdin 或文件读取
+    import sys
+    if len(sys.argv) == 1:
+        content = sys.stdin.read()
+    else:
+        content = open(sys.argv[1]).read()
+    print(convert(content))
 ```
 
 ```bash
-MD=$(opencode export "$SESSION_ID" | python3 /tmp/oc_convert.py)
+MD=$(opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py)
 ```
 
 ### 2B.3 Upload via MCP
