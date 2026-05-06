@@ -117,12 +117,21 @@ def render_block(blk, thinking=True, tools=True):
         tool_name = blk.get('name','')
         out = f"**Tool: {tool_name}**\n\n"
         
-        # 过滤 converter 脚本写入（Bash cat > /tmp/cc_convert.py）
+        # 过滤 converter 脚本写入
         if tool_name == "Bash" and blk.get("input"):
             input_data = blk.get("input", {})
             command = input_data.get("command", "")
             if "cat > /tmp/cc_convert.py" in command or "cat > /tmp/oc_convert.py" in command:
                 out += "**Input:** (converter script creation, omitted)\n\n"
+                return out
+        
+        # 截断 Bash 命令（保留描述，截断命令）
+        if tool_name == "Bash" and blk.get("input"):
+            input_data = blk.get("input", {})
+            desc = input_data.get("description", "")
+            cmd = input_data.get("command", "")
+            if len(cmd) > 500:
+                out += f"**Input:**\nDescription: {desc}\nCommand: {cmd[:500]}... (truncated)\n\n"
                 return out
         
         if blk.get("input") is not None:
