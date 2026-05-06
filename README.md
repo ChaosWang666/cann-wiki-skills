@@ -11,11 +11,11 @@ AscendC Kernel Wiki 知识检索和会话轨迹上传的 LLM Agent skills。
 ### 1. 安装 Skills
 
 ```bash
-# Claude Code（推荐）
-npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
-
-# OpenCode
+# OpenCode（推荐）
 npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
+
+# Claude Code
+npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 ```
 
 ### 2. 配置 MCP 连接
