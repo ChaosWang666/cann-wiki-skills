@@ -25,7 +25,7 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a opencode
 /setup-ascendc-wiki
 ```
 
-按提示选择 agent 类型和端口（默认 3001）。
+按提示选择 agent 类型和端口（默认 **3000**，如需其他端口可手动输入如 3001）。
 
 ### 3. **重启 Agent**（必须！）
 
@@ -155,7 +155,7 @@ Agent:
 **原因**: MCP Server 未运行
 
 **解决**:
-联系管理员启动 MCP Server，或确认端口配置正确（默认 3001）
+联系管理员启动 MCP Server，或确认端口配置正确（默认 **3000**）
 
 ---
 
