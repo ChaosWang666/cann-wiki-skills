@@ -61,38 +61,41 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 
 ### 示例 1：查询知识
 
+**用户输入**：
 ```
-用户: /wiki-query AscendC 编程模型是什么？
+/wiki-query AscendC 编程模型是什么？
+```
 
-Agent:
+**Agent 响应**：
+```
 我来帮你查询 AscendC 编程模型相关知识...
 
 [调用 wiki_search → wiki_get_page → 合成答案]
 
-## Answer
+Answer:
 
-AscendC 编程模型采用 **AI Core 三级流水线**架构：
-- **CopyIn**: GM → UB 数据搬运
-- **Compute**: UB 上矢量/矩阵计算
-- **CopyOut**: UB → GM 结果回写
+AscendC 编程模型采用 AI Core 三级流水线架构：
+- CopyIn: GM → UB 数据搬运
+- Compute: UB 上矢量/矩阵计算
+- CopyOut: UB → GM 结果回写
 
 [Source: wiki/static/ascendc/guide/concepts/programming-model.md]
 
-💡 完整内容请查看 Wiki 页面...
+完整内容请查看 Wiki 页面...
 ```
 
 ### 示例 2：算子开发
 
-用户输入：
+**用户输入**：
 ```
 /wiki-query 帮我写一个 Add 算子
 ```
 
-Agent 响应：
+**Agent 响应**：
 ```
 [检索 Elementwise 模式 + 矢量算子实践]
 
-## Answer
+Answer:
 
 AscendC 实现 Add 算子有两种方式：
 
@@ -102,26 +105,30 @@ AscendC 实现 Add 算子有两种方式：
 
 方式二：ElementwiseSch16B 模式（推荐）
 - DAG 表达式自动处理流水线
-- 代码：`auto dag = Placeholder::In0 + Placeholder::In1;`
+- 代码：auto dag = Placeholder::In0 + Placeholder::In1
 
 [完整代码见 wiki/static/ascendc/guide/practice/vector-programming-basics.md]
 ```
-```
+
+---
 
 ### 示例 3：上传轨迹
 
+**用户输入**：
 ```
-用户: /session-upload
+/session-upload
+```
 
-Agent:
+**Agent 响应**：
+```
 检测到 Claude Code agent...
 转换会话轨迹...
 上传到 raw/sessions/uploaded/<session-id>.md
 
 ✓ 上传完成
-- Session: xxx-xxx-xxx
-- 行数: 818 行
-- 关键词: AscendC ✓ (35 次)
+Session: xxx-xxx-xxx
+行数: 818 行
+关键词: AscendC (35 次)
 ```
 
 ---
