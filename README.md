@@ -83,30 +83,29 @@ AscendC 编程模型采用 **AI Core 三级流水线**架构：
 
 ### 示例 2：算子开发
 
+用户输入：
 ```
-用户: /wiki-query 帮我写一个 Add 算子
+/wiki-query 帮我写一个 Add 算子
+```
 
-Agent:
+Agent 响应：
+```
 [检索 Elementwise 模式 + 矢量算子实践]
 
 ## Answer
 
 AscendC 实现 Add 算子有两种方式：
 
-### 方式一：基础手工实现
-```cpp
-class KernelAdd {
-    // CopyIn/Compute/CopyOut 三阶段
-};
-```
+方式一：基础手工实现
+- CopyIn/Compute/CopyOut 三阶段流水线
+- 手动管理队列和内存
 
-### 方式二：ElementwiseSch16B 模式（推荐）
-```cpp
-// DAG 表达式自动处理流水线
-auto dag = Placeholder::In0 + Placeholder::In1;
-```
+方式二：ElementwiseSch16B 模式（推荐）
+- DAG 表达式自动处理流水线
+- 代码：`auto dag = Placeholder::In0 + Placeholder::In1;`
 
-[完整代码示例见 wiki/static/ascendc/guide/practice/vector-programming-basics.md]
+[完整代码见 wiki/static/ascendc/guide/practice/vector-programming-basics.md]
+```
 ```
 
 ### 示例 3：上传轨迹
