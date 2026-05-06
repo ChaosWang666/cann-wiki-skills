@@ -233,18 +233,14 @@ ascendc-wiki-skills/
 每个 skill 文件包含：
 
 1. **YAML frontmatter**（必须）
-```yaml
----
-name: skill-name
-description: "Skill description for agent"
----
-```
-
+   - 格式：三个短横线包裹的 YAML 元数据
+   - 必须字段：`name`, `description`
+   
 2. **Skill 内容**（Markdown）
-- Prerequisites
-- Step-by-step workflow
-- Error handling
-- Notes
+   - Prerequisites
+   - Step-by-step workflow
+   - Error handling
+   - Notes
 
 ### 修改 Skill
 
@@ -265,16 +261,10 @@ git add -A && git commit -m "Update skill" && git push
 # 1. 创建目录
 mkdir -p skills/wiki/new-skill
 
-# 2. 创建 SKILL.md（包含 frontmatter）
-cat > skills/wiki/new-skill/SKILL.md << 'EOF'
----
-name: new-skill
-description: "Description"
----
-
-# New Skill
-...
-EOF
+# 2. 创建 SKILL.md 文件
+# 文件内容格式：
+#   第一部分：YAML frontmatter (name + description)
+#   第二部分：Skill Markdown 内容
 
 # 3. 提交并推送
 git add -A && git commit -m "Add new-skill" && git push
