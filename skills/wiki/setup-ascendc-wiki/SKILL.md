@@ -149,30 +149,31 @@ Ask user:
 
 Then write the appropriate config file.
 
-### Step 5: Verify
+### Step 5: Mandatory Restart
 
-After config, prompt user to:
-1. Restart their agent
-2. Verify MCP tools appear: `wiki_search`, `wiki_get_page`, `wiki_submit_trajectory`
+**CRITICAL: User MUST restart Claude Code after config.**
 
-Show success message:
+Even if `claude mcp list` shows "Connected", MCP tools will NOT work until restart.
 
-```markdown
-## Setup Complete
-
-- MCP connection configured
-- Config file: {path}
-- Mode: remote/local
-
-### Available Tools
-- wiki_search(query, tags?, type?, limit)
-- wiki_get_page(path)
-- wiki_submit_trajectory(session_id, transcript, source)
-
-### Next Steps
-- Restart your agent to load MCP config
-- Try: "What is AscendC programming model?"
+Tell user explicitly:
 ```
+## ⚠️ 配置完成，必须重启！
+
+配置文件已写入，但 MCP 工具需要重启才能生效。
+
+### 必须操作
+1. **退出当前 Claude Code 会话** (Ctrl+D 或 `/exit`)
+2. **重新启动 Claude Code**
+3. 验证 MCP 工具可用：运行 `/mcp` 应显示 ascendc-wiki
+
+### 不重启的后果
+- `/mcp` 显示 "No MCP servers configured"
+- wiki 工具无法调用
+
+请现在重启，重启后 MCP 工具才能正常使用。
+```
+
+**DO NOT** claim setup is complete without restart.
 
 ## Notes
 
