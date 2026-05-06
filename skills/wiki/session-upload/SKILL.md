@@ -182,17 +182,17 @@ python3 /tmp/cc_convert.py "$LATEST" > /tmp/session_output.md
 
 ### 2A.3 Upload via MCP
 
-Read the converted file and call MCP tool with JSON-encoded content:
+Call MCP tool with file path (avoids Claude Code auto-truncation):
 
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  content=<read file /tmp/session_output.md as raw string>,
+  file_path="/tmp/session_output.md",
   source="claude-code"
 )
 ```
 
-**IMPORTANT**: Pass content as raw string, not through shell variable interpolation, to avoid `<command-message>` tags being parsed by Claude Code.
+**IMPORTANT**: Use `file_path` parameter instead of passing content directly. Claude Code truncates long strings automatically.
 
 ## Step 2B: OpenCode Path
 
@@ -348,15 +348,17 @@ if __name__ == "__main__":
 ```
 
 ```bash
-MD=$(opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py)
+opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py > /tmp/session_output.md
 ```
 
 ### 2B.3 Upload via MCP
 
+Call MCP tool with file path:
+
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  content=<MD>,
+  file_path="/tmp/session_output.md",
   source="opencode"
 )
 ```
