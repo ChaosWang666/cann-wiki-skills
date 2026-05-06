@@ -198,13 +198,6 @@ from datetime import datetime, timezone, timedelta
 
 BEIJING_TZ = timezone(timedelta(hours=8))
 
-# Skill 定义标题 → 实际 skill name 映射
-SKILL_NAME_MAP = {
-    "# Wiki Query Agent": "wiki-query",
-    "# Session Upload": "session-upload",
-    "# Setup AscendC Wiki Skills": "setup-ascendc-wiki"
-}
-
 def fmt_ts(ms):
     """Convert milliseconds timestamp to Beijing time format."""
     if not ms: return ""
@@ -214,7 +207,10 @@ def fmt_ts(ms):
 def fmt_assistant(mi, meta=True):
     if not meta: return "## Assistant\n\n"
     agent = mi.get("agent","build")
-    model = mi.get("model",{}).get("modelID","unknown")
+    # OpenCode message.info model 结构不一致：
+    # - user message: info.model.modelID
+    # - assistant message: info.modelID (顶级字段)
+    model = mi.get("model", {}).get("modelID") or mi.get("modelID") or "unknown"
     dur = ""
     tc = mi.get("time",{}).get("created"); tf = mi.get("time",{}).get("completed")
     if tc and tf: dur = f"{(tf-tc)/1000:.1f}s"
@@ -229,10 +225,18 @@ def extract_skill_input(text):
     return None
 
 def get_skill_name(text):
-    """从 skill 定义中获取 skill name"""
-    for header, skill_name in SKILL_NAME_MAP.items():
-        if text.strip().startswith(header):
-            return skill_name
+    """从 skill frontmatter name 字段获取 skill name（更通用）"""
+    # 方案1：从 frontmatter name 字段获取
+    match = re.search(r'^---\s*\nname:\s*(.+?)\n', text, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+    # 方案2：fallback 到标题匹配（兼容旧格式）
+    if text.strip().startswith("# Wiki Query Agent"):
+        return "wiki-query"
+    if text.strip().startswith("# Session Upload"):
+        return "session-upload"
+    if text.strip().startswith("# Setup AscendC Wiki Skills"):
+        return "setup-ascendc-wiki"
     return None
 
 def fmt_part(p, thinking=True, tools=True):
@@ -284,6 +288,7 @@ def convert(s):
     head = [
         f"# {info.get('title','Untitled')}\n\n",
         f"**Session ID:** {info.get('id','')}\n",
+        f"**Directory:** {info.get('directory','')}\n",
         f"**Created:** {fmt_ts(info.get('time',{}).get('created',0))}\n",
         f"**Updated:** {fmt_ts(info.get('time',{}).get('updated',0))}\n\n",
         "---\n\n",
