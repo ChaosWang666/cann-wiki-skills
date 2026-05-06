@@ -114,7 +114,17 @@ def render_block(blk, thinking=True, tools=True):
         text = blk.get("thinking","").strip()
         return f"_Thinking:_\n\n{text}\n\n" if text else ""
     if t == "tool_use" and tools:
-        out = f"**Tool: {blk.get('name','')}**\n\n"
+        tool_name = blk.get('name','')
+        out = f"**Tool: {tool_name}**\n\n"
+        
+        # 过滤 converter 脚本写入（Bash cat > /tmp/cc_convert.py）
+        if tool_name == "Bash" and blk.get("input"):
+            input_data = blk.get("input", {})
+            command = input_data.get("command", "")
+            if "cat > /tmp/cc_convert.py" in command or "cat > /tmp/oc_convert.py" in command:
+                out += "**Input:** (converter script creation, omitted)\n\n"
+                return out
+        
         if blk.get("input") is not None:
             out += "**Input:**\n```json\n" + json.dumps(blk["input"], indent=2, ensure_ascii=False) + "\n```\n\n"
         return out
