@@ -122,8 +122,10 @@ def render_block(blk, thinking=True, tools=True):
         c = blk.get("content","")
         if isinstance(c, list):
             c = "".join(p.get("text","") if isinstance(p, dict) else str(p) for p in c)
-        # MCP wiki 工具返回 summary，不截断
-        if blk.get("name", "").startswith("ascendc-wiki_"):
+        # MCP wiki 工具返回的数据，不截断
+        # Claude Code tool_result 没有 name 字段，通过 content 判断
+        is_wiki_data = '{"results"' in str(c) or '{"path":"wiki/' in str(c) or blk.get("name", "").startswith("ascendc-wiki_")
+        if is_wiki_data:
             return "**Tool Result:**\n```\n" + str(c) + "\n```\n\n"
         return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
     return ""
