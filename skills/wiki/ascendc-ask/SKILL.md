@@ -7,7 +7,7 @@ description: "AscendC Wiki knowledge retrieval (human-facing). MUST use this ski
 
 Human-facing knowledge retrieval for AscendC Kernel Wiki via MCP Server. Finds relevant pages, fetches top-3 automatically, and synthesizes a cited answer.
 
-> **Naming note**: this skill was previously called `wiki-query`. It was renamed to `ascendc-ask` because the AscendC-Kernel-Wiki repo's MCP server has its own server-side skill named `wiki-query` (a strict `TASK: search|get_page|get_index` dispatcher invoked by the MCP server's sub-agent). Two skills with the same name in one agent caused routing collisions. This skill is the *human* entry point; the dispatcher is internal to the MCP server and you should never invoke it directly.
+> **Naming note**: this skill was previously called `wiki-query`. It was renamed to `ascendc-ask` because earlier versions of the AscendC-Kernel-Wiki MCP server had an internal `wiki-query` sub-agent dispatcher of the same name, and the two collided when both were active in one agent. v2 of the server has removed that internal dispatcher (retrievers are now invoked directly), but the rename is preserved as the public entry point so the human-facing trigger stays stable across server versions.
 
 ## Prerequisites
 
@@ -15,14 +15,14 @@ Human-facing knowledge retrieval for AscendC Kernel Wiki via MCP Server. Finds r
 
 | Tool | Description |
 |------|-------------|
-| `wiki_search(query, tags?, type?, limit)` | Keyword-overlap search blended with Q-Value, returns ranked page summaries |
-| `wiki_get_page(path)` | Get full page content with frontmatter |
-| `wiki_get_index()` | Get wiki index (optional, for navigation) |
-| `wiki_submit_trajectory(session_id, content)` | Persist a session transcript Markdown to `raw/sessions/uploaded/{session_id}.md` |
+| `wiki_search(query, tags?, type?, limit)` | Returns ranked summaries keyed by knowledge `id` (no internal paths exposed). Response: `{results: [{id, summary, tags, score, qValue}], total, warning?}` |
+| `wiki_get_page(ids: list[str])` | **Batch** fetch full page content. Response: `{pages: [{id, frontmatter, content, qValue}], errors: [{id, error}]}` |
+| `wiki_get_index()` | **[DEPRECATED]** — use `wiki_search` + `wiki_get_page` instead |
+| `wiki_submit_trajectory(session_id, content)` | Persist a session transcript Markdown; uploaded path is determined by server `config.yaml` (`trajectory.uploaded_dir`) |
 
 MCP endpoint: `http://localhost:3000/mcp` (streamable-http transport)
 
-If MCP Server is not running, prompt user to start it first. To verify server status, try calling `wiki_get_index()` or check port 3000.
+If MCP Server is not running, prompt user to start it first. To verify server status, try calling `wiki_search("test", limit=1)` or check port 3000.
 
 ## Activation (MUST trigger this skill, NOT direct MCP calls)
 
@@ -87,56 +87,63 @@ wiki_search(
 )
 ```
 
-Server-side scoring: `score = 0.7 × keyword_overlap + 0.3 × qValue`
-(`keyword_overlap` is computed against `entry.summary`, `entry.tags`, and `entry.content_path` — see `.claude/QUERY/SKILL.md` in the wiki repo).
+Server-side scoring is decided by the configured retriever mode (local / openai-api / claude-agent — set in server `config.yaml`); clients receive a single pre-blended `score`. **Don't pass `mode`** — it is server-internal.
 
-Response shape (per the QUERY dispatcher contract):
+Response shape (v2 schema):
 
 ```json
 {
   "results": [
     {
-      "path": "wiki/static/ascendc/guide/concepts/programming-model.md",
-      "frontmatter": {
-        "type": "concept",
-        "title": "Programming Model",
-        "tags": ["multi_core"],
-        "source": "..."
-      },
+      "id": "wiki_static_xxx_md",
       "summary": "...",
+      "tags": ["vector", "basic_api"],
       "score": 0.85,
       "qValue": 0.73
     }
   ],
-  "total": 15
+  "total": 15,
+  "warning": "..."
 }
 ```
 
-Note: title / type / tags / source live inside `frontmatter`, not at the top level. The schema is not 100% stable across runs (the dispatcher is LLM-backed); treat fields beyond `path`, `summary`, `score`, `qValue` as best-effort.
+Notes:
+- `results[]` carries **no `path`, no `frontmatter`, no `title`** — those are server internals. Title/frontmatter become available only after `wiki_get_page(ids)`.
+- `warning` is optional; present on retriever failure / empty query. **Surface it to the user verbatim** instead of silently retrying or downgrading.
+- `score` is already blended (mode-dependent); sort by it desc and don't re-rank.
 
 ### Phase C: Batch Fetch Pages
 
-Automatically call `wiki_get_page` for top-3 results:
+Single batch call (do **not** loop per-id):
 
-```
-for each path in results[:3]:
-  wiki_get_page(path)
+```python
+ids = [r["id"] for r in results[:3]]
+wiki_get_page(ids=ids)
 ```
 
-Returns full content:
+Returns:
 
 ```json
 {
-  "path": "...",
-  "frontmatter": {...},
-  "content": "Full markdown content",
-  "source": "...",
-  "qValue": 0.73
+  "pages": [
+    {
+      "id": "wiki_static_xxx_md",
+      "frontmatter": {...},
+      "content": "Full markdown content (frontmatter section included)",
+      "qValue": 0.73
+    }
+  ],
+  "errors": [
+    {"id": "wiki_static_yyy_md", "error": "id not found"}
+  ]
 }
 ```
 
+- `frontmatter` is server-parsed (no need to re-parse).
+- `errors[]` is a soft-failure list — bad ids do not block the rest of `pages[]`. Mention unresolved ids in the answer if they reduce coverage.
+
 **Strategy**:
-- Default: top-3 pages
+- Default: top-3 ids
 - If results < 3: fetch all available
 - For SYNTHESIS/COMPARISON with ≥3 results: optionally expand to top-5
 
@@ -145,13 +152,13 @@ Returns full content:
 Combine multi-page info into structured answer:
 
 **Citation rules (MUST follow):**
-1. **Every fact must cite its source inline** — format: `[Source: wiki/path/to/page.md]`
+1. **Every fact must cite its source inline** — format: `[Source: <id>]` using the knowledge id returned by `wiki_get_page`
 2. Place citation immediately after the fact/section, not at the end
-3. For multi-source facts: `[Source: wiki/path1.md, wiki/path2.md]`
+3. For multi-source facts: `[Source: <id1>, <id2>]`
 
 **Example (correct):**
 ```markdown
-### Alignment Requirements [Source: wiki/static/ascendc/guide/api/vector-compute.md]
+### Alignment Requirements [Source: wiki_static_ascendc_guide_api_vector-compute_md]
 
 DataCopy transfer length must be **32-byte aligned**.
 
@@ -168,30 +175,16 @@ DataCopy transfer length must be **32-byte aligned**.
 ---
 
 **References:**
-- wiki/static/ascendc/guide/api/vector-compute.md
+- wiki_static_ascendc_guide_api_vector-compute_md
 ```
 
 **Content structure:**
 - COMPARISON → comparison table (each row cites its source)
 - HOW-TO → step list + code examples (cite source for each step)
 - Use tables, code blocks, structured format
-- End with References summary (optional, but inline citations are mandatory)
+- End with References summary listing `<id> — <frontmatter.title>` per page (titles come from `wiki_get_page`, not search)
 
-### Phase E: File-Back Decision
-
-Evaluate if answer should be persisted as new wiki page. File-back if **≥3 criteria met**:
-- [ ] Synthesized 3+ wiki pages
-- [ ] Produced novel comparison/analysis
-- [ ] Question likely to be repeated (high generality)
-- [ ] Fills gap in wiki coverage
-- [ ] Provides guide not covered by existing practice pages
-
-If file-back:
-- Determine page type (concept/practice/pattern)
-- Create wiki page with frontmatter
-- Update `wiki/index.md` and `wiki/log.md`
-
-### Phase F: Trajectory Upload Prompt
+### Phase E: Trajectory Upload Prompt
 
 At answer end, include a brief footer:
 
@@ -208,21 +201,21 @@ wiki_submit_trajectory(
 )
 ```
 
-Only two parameters: `session_id` and `content`. The server stores the bytes verbatim at `raw/sessions/uploaded/{session_id}.md`; downstream sanitization / extraction is handled by the knowledge engine's monitor process, not this tool.
+Only two parameters: `session_id` and `content` (no `source` / `transcript` aliases). The server stores the bytes verbatim at `<server config trajectory.uploaded_dir>/{session_id}.md`; downstream sanitization / extraction is handled by the knowledge engine's monitor process, not this tool.
 
 ## Output Format
 
 ```markdown
 ## Answer
 
-[Structured content with [Source: wiki/path/to/page.md] citations]
+[Structured content with [Source: <id>] citations]
 
 ---
 
 **References:**
-- wiki/path1.md
-- wiki/path2.md
-- wiki/path3.md
+- <id1> — <frontmatter.title from wiki_get_page>
+- <id2> — ...
+- <id3> — ...
 
 💡 Use `/session-upload` to save this session to Wiki
 ```
@@ -230,11 +223,11 @@ Only two parameters: `session_id` and `content`. The server stores the bytes ver
 ## Notes
 
 - **MCP Server required** — Prompt user to start if not running
-- **Cite specifically** — Page path + Q-Value, not vague "from Wiki"
-- **Don't fabricate** — If wiki has no relevant content, state clearly
-- **Auto top-3** — No manual selection, improves efficiency
+- **Cite by id** — Use the knowledge `id` returned by `wiki_get_page`; do not invent paths
+- **Don't fabricate** — If `results[]` is empty or `warning` is set, state clearly; do not guess
+- **Auto top-3 batch** — Single `wiki_get_page(ids=[...])` call, no per-id loop
 - **Q-Value managed by MCP** — No local tracking
-- **Transcript excludes tool returns** — Only conversation + tool metadata
+- **No manual file-back** — v2 has removed in-skill wiki page authoring; to feed answers back into the wiki, use `/session-upload` and let `knowledge_engine`'s ingest pipeline handle it
 - **Graceful degradation** — If MCP unreachable, prompt error without blocking local functions
 
 ## Error Handling
@@ -242,7 +235,7 @@ Only two parameters: `session_id` and `content`. The server stores the bytes ver
 | Scenario | Handling |
 |----------|----------|
 | MCP Server not running | Prompt startup command |
-| wiki_search empty results | "No relevant content", suggest keyword adjustment |
-| wiki_get_page failed | "Invalid path or deleted" |
-| wiki_submit_trajectory failed | "Network error, retry later" |
+| `wiki_search` empty results or response carries `warning` | Surface the warning text to user verbatim; suggest keyword/tag adjustment |
+| `wiki_get_page` partial failures | List unresolved ids from `errors[]`; continue synthesis from `pages[]` |
+| `wiki_submit_trajectory` failed | Surface server `message` payload to user (don't swallow it) |
 | Network timeout | "Timeout, check MCP Server status" |

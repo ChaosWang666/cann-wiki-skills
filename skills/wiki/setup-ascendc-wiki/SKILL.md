@@ -14,8 +14,8 @@ This is a prompt-driven skill. Explore, present what's missing, confirm with use
 Before setup, check:
 
 1. **MCP Server running?**
-   - Try calling `wiki_get_index()` MCP tool
-   - Or check if port 3000 is listening: `curl -s http://localhost:3000/mcp` (returns MCP protocol info)
+   - Try calling `wiki_search("test", limit=1)` MCP tool (a no-op probe)
+   - Or check if port 3000 is listening: `curl -sI http://localhost:3000/mcp | head -3` (401/406 are healthy — they mean the streamable-http endpoint is up but the bare request is missing MCP headers)
    - If not running, prompt user to start it first
 
 2. **Agent MCP config exists?**
@@ -24,7 +24,8 @@ Before setup, check:
    - If missing, create it
 
 3. **MCP tools available?**
-   - Required tools: `wiki_search`, `wiki_get_page`, `wiki_get_index`, `wiki_submit_trajectory`
+   - Required v2 tools: `wiki_search`, `wiki_get_page` (batch by `ids`), `wiki_submit_trajectory`
+   - `wiki_get_index` still exists but is **[DEPRECATED]** — do not depend on it for health checks or page navigation
    - After config, verify tools appear in agent's MCP tool list
 
 ## Process
@@ -35,23 +36,24 @@ Verify MCP Server is running:
 
 1. Check if port 3000 is listening:
    ```bash
-   curl -s http://localhost:3000/mcp
+   curl -sI http://localhost:3000/mcp | head -3
    ```
-   (Returns MCP protocol info if running)
+   401 / 406 are healthy responses — they mean the streamable-http endpoint is up.
 
-2. Or try calling MCP tool directly (after agent config):
+2. Or try calling an MCP tool directly (after agent config):
    ```
-   wiki_get_index()
+   wiki_search("test", limit=1)
    ```
 
 **If server not running**:
 - Ask user: "MCP Server is not running. Is the AscendC-Kernel-Wiki repo available?"
+- Confirm the repo's `<repo_root>/config.yaml` has `search.mode` set (`local` / `openai-api` / `claude-agent`) — v2 reads business config (mode / model / api_key) only from `config.yaml`; CLI no longer accepts `--retriever` and no `EMBEDDING_MODEL` env is honored.
 - Provide startup command:
   ```bash
   # In AscendC-Kernel-Wiki repo root (where wiki/ and raw/ exist)
   cd mcp-server
   IS_SANDBOX=1 python server.py --port 3000 --host 0.0.0.0
-  
+
   # Non-root users can omit IS_SANDBOX=1
   ```
 - Wait for user to start server before continuing
@@ -127,7 +129,7 @@ claude mcp list           # should show ascendc-wiki as connected (Claude Code)
   "mcpServers": {
     "ascendc-wiki": {
       "command": "python",
-      "args": ["path/to/AscendC-Kernel-Wiki/mcp-server/server.py", "--port", "3000", "--host", "0.0.0.0"],
+      "args": ["path/to/AscendC-Kernel-Wiki/mcp-server/server.py", "--port", "3000"],
       "env": {
         "IS_SANDBOX": "1"
       }
@@ -135,6 +137,10 @@ claude mcp list           # should show ascendc-wiki as connected (Claude Code)
   }
 }
 ```
+
+Notes:
+- v2 takes business config (search mode / model / api key) from `<repo_root>/config.yaml` — **do not** add `--retriever` to args or `EMBEDDING_MODEL` to env; both were removed.
+- `IS_SANDBOX=1` is only needed for root deployments; non-root users can drop it.
 
 Explain each option:
 - **Remote mode**: Connect to already-running MCP server (recommended)
@@ -179,7 +185,8 @@ Tell user explicitly:
 
 ## Notes
 
-- **MCP Server required** — Cannot use wiki skills without running server
+- **MCP Server required** — Cannot use wiki skills without running server. This skill assumes the server speaks v2 schema (`results[]` keyed by `id`, no `path`; `wiki_get_page` takes `ids: list[str]`).
+- **Server-side config drives behavior** — Search mode / embedding model / API keys are in `<repo_root>/config.yaml` only; client-side switches are gone in v2.
 - **Config is client-level** — Not stored in skill, stored in agent config
 - **One setup per agent** — Re-run only if switching agents or MCP endpoint changes
 - **Server and client separate** — MCP server runs independently, agent connects to it

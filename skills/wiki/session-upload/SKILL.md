@@ -24,7 +24,7 @@ The two converters are independent. Adding a new platform = drop a new converter
 1. MCP Server is running and `wiki_submit_trajectory` is available — run `/setup-ascendc-wiki` first.
 2. **Claude Code path**: session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
    **OpenCode path**: OpenCode CLI (`opencode`) is installed and has at least one session.
-3. The transcript should mention "Ascend C" / "AscendC" — otherwise the server routes it to `raw/sessions/to_review/` for manual triage (expected, not an error).
+3. The transcript should mention "Ascend C" / "AscendC" — otherwise the downstream `knowledge_engine` ingest pipeline routes it to the configured to-review directory for manual triage (expected, not an error). The MCP server itself only persists; routing is decided downstream.
 
 ## Step 1: Detect Agent
 
@@ -86,7 +86,7 @@ The MCP tool signature is exactly:
 wiki_submit_trajectory(session_id: str, content: str) -> dict
 ```
 
-Two parameters, no more. The server lands the bytes verbatim at `raw/sessions/uploaded/{session_id}.md`; downstream sanitization and extraction are owned by the knowledge engine's monitor process.
+Two parameters, no more (no `source`, no `transcript` alias). The server lands the bytes verbatim at `<trajectory.uploaded_dir>/{session_id}.md`, where `trajectory.uploaded_dir` comes from the server's `config.yaml`. Downstream sanitization and extraction are owned by the knowledge engine's monitor process.
 
 Steps:
 
@@ -111,7 +111,7 @@ wiki_submit_trajectory(
 ✓ Uploaded
 - Agent:   claude-code | opencode
 - Session: {session_id}
-- Path:    raw/sessions/uploaded/{session_id}.md
+- Path:    <trajectory.uploaded_dir>/{session_id}.md  (resolved from server config.yaml — do NOT hard-code)
 - Pipeline: knowledge_engine auto-sanitize + extraction
 ```
 
@@ -124,6 +124,7 @@ wiki_submit_trajectory(
 | `wiki_submit_trajectory` not registered | "MCP tool missing — restart agent after setup" |
 | Empty transcript | "No messages to upload" |
 | JSON/JSONL parse error | "Skipping malformed line, continuing" |
+| Server returns `{status: "error", message: "..."}` | Surface the `message` payload to the user verbatim — don't paraphrase or swallow |
 | Network/API error | "Network error, retry later" |
 
 ## Notes
