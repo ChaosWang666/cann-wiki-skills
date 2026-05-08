@@ -1,34 +1,43 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript (OpenCode or Claude Code) to the AscendC Wiki via MCP. Trigger: `/session-upload`."
+description: "Auto-upload current session transcript (Claude Code or OpenCode) to the AscendC Wiki via MCP. Trigger: `/session-upload`."
 ---
 
 # Session Upload
 
-Auto-upload the current session transcript to the AscendC Wiki knowledge base. Works for both **OpenCode** and **Claude Code** — the skill detects which agent is running and picks the right transcript source.
+Auto-upload the current session transcript to the AscendC Wiki knowledge base. Works for both **Claude Code** and **OpenCode** — the skill detects which agent is running and dispatches to the matching converter under `scripts/`.
+
+## Layout
+
+```
+session-upload/
+├── SKILL.md              # this file — detect + dispatch + upload
+└── scripts/
+    ├── cc_convert.py     # Claude Code JSONL → Markdown (used by 2A)
+    └── oc_convert.py     # OpenCode JSON → Markdown   (used by 2B)
+```
+
+The two converters are independent. Adding a new platform = drop a new converter into `scripts/` and add a branch in Step 2; you should never need to touch the existing converter when working on the other platform.
 
 ## Prerequisites
 
-1. MCP Server is running and `wiki_submit_trajectory` is available (run `/setup-ascendc-wiki` first).
-2. Either OpenCode CLI (`opencode`) is installed, OR the session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
-3. Session contains "Ascend C" / "AscendC" keywords (otherwise it lands in `raw/sessions/to_review/` for manual review).
+1. MCP Server is running and `wiki_submit_trajectory` is available — run `/setup-ascendc-wiki` first.
+2. **Claude Code path**: session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
+   **OpenCode path**: OpenCode CLI (`opencode`) is installed and has at least one session.
+3. The transcript should mention "Ascend C" / "AscendC" — otherwise the server routes it to `raw/sessions/to_review/` for manual triage (expected, not an error).
 
 ## Step 1: Detect Agent
 
-Run a shell check to decide which path to take. **Priority: project config > active session > historical files**.
+Pick the platform branch. **Priority: project config > active session > historical files**.
 
 ```bash
-# Method 1: Check project config files (most reliable, user-controlled)
 if [ -f ".opencode/opencode.json" ] || [ -f ".agents/skills" ]; then
   AGENT=opencode
-elif [ -f ".mcp.json" ] || [ -f ".claude/settings.json" ] || [ -d ".claude/INGEST" ] || [ -d ".claude/QUERY" ] || [ -d ".claude/LINT" ]; then
+elif [ -f ".mcp.json" ] || [ -f ".claude/settings.json" ] || [ -d ".claude" ]; then
   AGENT=claude-code
-
-# Method 2: Check OpenCode session database (active sessions)
-elif command -v opencode >/dev/null 2>&1 && opencode session list -n 1 --format json 2>/dev/null | jq -e '.[0].id' > /dev/null 2>&1; then
+elif command -v opencode >/dev/null 2>&1 \
+     && opencode session list -n 1 --format json 2>/dev/null | jq -e '.[0].id' >/dev/null 2>&1; then
   AGENT=opencode
-
-# Method 3: Fallback to Claude Code transcript directory (historical)
 else
   ENC_CWD="$(pwd | sed 's|/|-|g')"
   CC_DIR="$HOME/.claude/projects/$ENC_CWD"
@@ -41,368 +50,62 @@ fi
 echo "Agent: $AGENT"
 ```
 
-**Detection priority**:
-1. **Project config files** — User-controlled, most reliable. Create `.opencode/opencode.json` for OpenCode projects, `.mcp.json` or `.claude/` for Claude Code projects.
-2. **OpenCode session database** — Confirms OpenCode has active sessions.
-3. **Claude Code transcript directory** — Fallback for historical sessions.
+Then proceed to **2A** if `AGENT=claude-code`, or **2B** if `AGENT=opencode`.
 
 ## Step 2A: Claude Code Path
 
-### 2A.1 Find Latest Session JSONL
-
-Claude Code stores JSONL transcripts at `~/.claude/projects/<encoded-cwd>/<session-uuid>.jsonl`, where `<encoded-cwd>` is the absolute working dir with `/` replaced by `-`.
+The converter lives at `scripts/cc_convert.py` next to this SKILL.md. Use the Read tool to fetch it from this skill's base directory and Write it to `/tmp/cc_convert.py`, then run it against the latest session JSONL.
 
 ```bash
 ENC_CWD="$(pwd | sed 's|/|-|g')"
 CC_DIR="$HOME/.claude/projects/$ENC_CWD"
 LATEST=$(ls -t "$CC_DIR"/*.jsonl 2>/dev/null | head -1)
 SESSION_ID=$(basename "$LATEST" .jsonl)
-echo "Session: $SESSION_ID"
-echo "File: $LATEST"
-```
 
-### 2A.2 Convert JSONL to Markdown
-
-Each line in the JSONL is one row. Relevant rows:
-
-| Top-level `type` | Meaning |
-|---|---|
-| `user` | `message.role=user`, `message.content` is a string OR a list of `tool_result` blocks |
-| `assistant` | `message.role=assistant`, `message.content` is a list of `text` / `thinking` / `tool_use` blocks; `message.model` carries the model id |
-| `attachment` / `last-prompt` / `permission-mode` / `file-history-snapshot` / `ai-title` | metadata — skip |
-
-Use this embedded Python converter (run it from the same shell):
-
-```python
-#!/usr/bin/env python3
-"""Claude Code JSONL → Markdown converter."""
-import json, sys, re
-from datetime import datetime, timezone, timedelta
-
-BEIJING_TZ = timezone(timedelta(hours=8))
-
-def ts(s):
-    if not s: return ""
-    try:
-        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
-        return dt.astimezone(BEIJING_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    except: return s
-
-def get_skill_name(text):
-    """从 skill 定义文本获取 name"""
-    if not text.strip().startswith("Base directory for this skill:"):
-        return None
-    match = re.search(r'\n#\s+(.+?)\n', text)
-    if match:
-        title = match.group(1).strip()
-        return {
-            "Setup AscendC Wiki Skills": "setup-ascendc-wiki",
-            "Wiki Query Agent": "wiki-query",
-            "Session Upload": "session-upload"
-        }.get(title, title.lower().replace(" ", "-"))
-    return None
-
-def render_block(blk, thinking=True, tools=True):
-    t = blk.get("type")
-    if t == "text":
-        text = blk.get("text","")
-        skill = get_skill_name(text)
-        if skill:
-            return f"/{skill}\n\n"
-        return text + "\n\n"
-    if t == "thinking" and thinking:
-        text = blk.get("thinking","").strip()
-        return f"_Thinking:_\n\n{text}\n\n" if text else ""
-    if t == "tool_use" and tools:
-        tool_name = blk.get('name','')
-        out = f"**Tool: {tool_name}**\n\n"
-        
-        # 过滤 converter 脚本写入
-        if tool_name == "Bash" and blk.get("input"):
-            input_data = blk.get("input", {})
-            command = input_data.get("command", "")
-            if "cat > /tmp/cc_convert.py" in command or "cat > /tmp/oc_convert.py" in command:
-                out += "**Input:** (converter script creation, omitted)\n\n"
-                return out
-        
-        # 截断 Bash 命令（保留描述，截断命令）
-        if tool_name == "Bash" and blk.get("input"):
-            input_data = blk.get("input", {})
-            desc = input_data.get("description", "")
-            cmd = input_data.get("command", "")
-            if len(cmd) > 500:
-                out += f"**Input:**\nDescription: {desc}\nCommand: {cmd[:500]}... (truncated)\n\n"
-                return out
-        
-        if blk.get("input") is not None:
-            out += "**Input:**\n```json\n" + json.dumps(blk["input"], indent=2, ensure_ascii=False) + "\n```\n\n"
-        return out
-    if t == "tool_result" and tools:
-        c = blk.get("content","")
-        if isinstance(c, list):
-            c = "".join(p.get("text","") if isinstance(p, dict) else str(p) for p in c)
-        # MCP wiki 工具返回的数据，不截断
-        # Claude Code tool_result 没有 name 字段，通过 content 判断
-        is_wiki_data = '{"results"' in str(c) or '{"path":"wiki/' in str(c) or blk.get("name", "").startswith("ascendc-wiki_")
-        if is_wiki_data:
-            return "**Tool Result:**\n```\n" + str(c) + "\n```\n\n"
-        return "**Tool Result:**\n```\n" + str(c)[:500] + "\n```\n\n"
-    return ""
-
-def convert(path, thinking=True, tools=True):
-    title, sid, cwd, created, updated = "Untitled", "", "", "", ""
-    body = []
-    with open(path, encoding="utf-8") as f:
-        for line in f:
-            try: o = json.loads(line)
-            except: continue
-            tp = o.get("type")
-            if tp == "ai-title":
-                title = o.get("aiTitle", title)
-            if not sid: sid = o.get("sessionId","")
-            if not cwd: cwd = o.get("cwd","")
-            if tp in ("user","assistant"):
-                t_iso = o.get("timestamp","")
-                created = created or t_iso
-                updated = t_iso or updated
-                msg = o.get("message", {})
-                role = msg.get("role")
-                content = msg.get("content","")
-                if role == "user":
-                    if isinstance(content, str):
-                        body.append("## User\n\n" + content + "\n\n---\n\n")
-                    elif isinstance(content, list):
-                        rendered = "".join(render_block(b, thinking, tools) for b in content if isinstance(b, dict))
-                        if rendered.strip():
-                            body.append("## User\n\n" + rendered + "---\n\n")
-                else:
-                    model = msg.get("model","unknown")
-                    parts = msg.get("content", [])
-                    rendered = "".join(render_block(b, thinking, tools) for b in parts if isinstance(b, dict))
-                    if rendered.strip():
-                        body.append(f"## Assistant ({model})\n\n" + rendered + "---\n\n")
-    return "".join([
-        f"# {title}\n\n",
-        f"**Session ID:** {sid}\n",
-        f"**Directory:** {cwd}\n",
-        f"**Created:** {ts(created)}\n",
-        f"**Updated:** {ts(updated)}\n\n",
-        "---\n\n",
-        "".join(body)
-    ])
-
-if __name__ == "__main__":
-    print(convert(sys.argv[1]))
-```
-
-Save as `/tmp/cc_convert.py`, then:
-
-```bash
 python3 /tmp/cc_convert.py "$LATEST" > /tmp/session_output.md
 ```
 
-### 2A.3 Upload via MCP
+Output: `/tmp/session_output.md`. The converter is self-contained — no OpenCode coupling, no shared mutable state. Continue to **Step 3 (Upload)**.
 
-**CRITICAL: Upload the converted file directly. DO NOT summarize, truncate, or modify the content.**
+## Step 2B: OpenCode Path
 
-The converter output at `/tmp/session_output.md` is the complete trajectory. Upload it verbatim:
+The converter lives at `scripts/oc_convert.py` next to this SKILL.md. Use the Read tool to fetch it from this skill's base directory and Write it to `/tmp/oc_convert.py`, then pipe `opencode export` into it.
 
-1. Read the file content from `/tmp/session_output.md`
-2. Call MCP tool with the exact content (no modifications)
+```bash
+SESSION_ID=$(opencode session list -n 1 --format json | jq -r '.[0].id')
+opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py > /tmp/session_output.md
+```
+
+Output: `/tmp/session_output.md`. The converter is self-contained — no Claude Code coupling. Continue to **Step 3 (Upload)**.
+
+## Step 3: Upload via MCP
+
+The MCP tool signature is exactly:
+
+```
+wiki_submit_trajectory(session_id: str, content: str) -> dict
+```
+
+Two parameters, no more. The server lands the bytes verbatim at `raw/sessions/uploaded/{session_id}.md`; downstream sanitization and extraction are owned by the knowledge engine's monitor process.
+
+Steps:
+
+1. Read `/tmp/session_output.md` with the `Read` tool (do NOT pipe through `cat`/`head` — those truncate or lose binary safety).
+2. Call the MCP tool with the file body as `content`:
 
 ```
 wiki_submit_trajectory(
   session_id="$SESSION_ID",
-  file_path="/tmp/session_output.md"
+  content="<entire Markdown body of /tmp/session_output.md>"
 )
 ```
 
 **DO NOT**:
 - Replace content with summaries like "[Full session uploaded]"
 - Truncate the content
-- Modify any part of the trajectory
+- Pass `file_path=` or `source=` (those parameters do not exist on the server)
 
-The trajectory must be preserved exactly as converted.
-wiki_submit_trajectory(
-  session_id="$SESSION_ID",
-  file_path="/tmp/session_output.md",
-  source="claude-code"
-)
-```
-
-**IMPORTANT**: Use `file_path` parameter instead of passing content directly. Claude Code truncates long strings automatically.
-
-## Step 2B: OpenCode Path
-
-### 2B.1 Get Current Session ID
-
-```bash
-SESSION_ID=$(opencode session list -n 1 --format json | jq -r '.[0].id')
-```
-
-### 2B.2 Export Session JSON and Convert
-
-```bash
-opencode export "$SESSION_ID"
-```
-
-Use the embedded Python below (matches the TUI `/export` format) to convert the JSON to Markdown:
-
-```python
-#!/usr/bin/env python3
-"""OpenCode session JSON → Markdown converter (matches TUI /export)."""
-import json, sys, re
-from datetime import datetime, timezone, timedelta
-
-BEIJING_TZ = timezone(timedelta(hours=8))
-
-def fmt_ts(ms):
-    """Convert milliseconds timestamp to Beijing time format."""
-    if not ms: return ""
-    dt = datetime.fromtimestamp(ms/1000, tz=BEIJING_TZ)
-    return dt.strftime("%Y-%m-%d %H:%M:%S")
-
-def fmt_assistant(mi, meta=True):
-    if not meta: return "## Assistant\n\n"
-    agent = mi.get("agent","build")
-    # OpenCode message.info model 结构不一致：
-    # - user message: info.model.modelID
-    # - assistant message: info.modelID (顶级字段)
-    model = mi.get("model", {}).get("modelID") or mi.get("modelID") or "unknown"
-    dur = ""
-    tc = mi.get("time",{}).get("created"); tf = mi.get("time",{}).get("completed")
-    if tc and tf: dur = f"{(tf-tc)/1000:.1f}s"
-    parts = [agent.capitalize(), model] + ([dur] if dur else [])
-    return f"## Assistant ({' · '.join(parts)})\n\n"
-
-def extract_skill_input(text):
-    """从 skill 定义中提取 Input 部分"""
-    match = re.search(r'## Input\s*\n+(.+?)(?:\n##|\Z)', text, re.DOTALL)
-    if match:
-        return match.group(1).strip()
-    return None
-
-def get_skill_name(text):
-    """从 skill frontmatter name 字段获取 skill name（更通用）"""
-    # 方案1：从 frontmatter name 字段获取
-    match = re.search(r'^---\s*\nname:\s*(.+?)\n', text, re.MULTILINE)
-    if match:
-        return match.group(1).strip()
-    # 方案2：fallback 到标题匹配（兼容旧格式）
-    if text.strip().startswith("# Wiki Query Agent"):
-        return "wiki-query"
-    if text.strip().startswith("# Session Upload"):
-        return "session-upload"
-    if text.strip().startswith("# Setup AscendC Wiki Skills"):
-        return "setup-ascendc-wiki"
-    return None
-
-def fmt_part(p, thinking=True, tools=True):
-    t = p.get("type","")
-    if t == "text" and not p.get("synthetic"):
-        text = p.get("text","")
-        # 检测 skill 定义 → 转为占位符
-        skill_name = get_skill_name(text)
-        if skill_name:
-            input_text = extract_skill_input(text)
-            if input_text:
-                return f"/{skill_name} {input_text}\n\n"
-            return ""
-        return text + "\n\n"
-    if t == "reasoning" and thinking: return f"_Thinking:_\n\n{p.get('text','')}\n\n"
-    if t == "tool" and tools:
-        s = p.get("state",{})
-        tool_name = p.get('tool','')
-        out = f"**Tool: {tool_name}**\n"
-        
-        # 过滤 skill tool 的 Output（不记录 SKILL.md 定义）
-        if tool_name == "skill" and s.get("status") == "completed" and s.get("output"):
-            output = s.get("output","")
-            if "<skill_content" in output:
-                # 只记录 skill name，不记录完整内容
-                match = re.search(r'name="([^"]+)"', output)
-                if match:
-                    out += f"\n**Output:** Loaded skill: {match.group(1)}\n"
-                return out + "\n"
-        
-        # 过滤 converter 脚本的写入
-        if tool_name == "write" and s.get("input"):
-            input_data = s.get("input",{})
-            file_path = input_data.get("filePath","")
-            if file_path in ("/tmp/oc_convert.py", "/tmp/cc_convert.py"):
-                out += f"\n**Input:** filePath: {file_path}\n"
-                return out + "\n"
-        
-        # 正常 tool：记录 Input 和 Output
-        if s.get("input"): 
-            out += "\n**Input:**\n```json\n" + json.dumps(s["input"], indent=2) + "\n```\n"
-        if s.get("status") == "completed" and s.get("output"):
-            output = s["output"]
-            # MCP wiki 工具返回的是 summary，不截断（知识来源完整）
-            if tool_name.startswith("ascendc-wiki_"):
-                out += "\n**Output:**\n```\n" + output + "\n```\n"
-            else:
-                out += "\n**Output:**\n```\n" + output[:500] + "\n```\n"
-        return out + "\n"
-    return ""
-
-def convert(s):
-    # 处理 stdin 中可能混入的非 JSON 行（如 opencode export 的 "Exporting session:" 消息）
-    lines = s.strip().split('\n')
-    json_content = None
-    for line in lines:
-        if line.startswith('{'):
-            # 找到 JSON 开始，重新拼接剩余行
-            json_content = '\n'.join(lines[lines.index(line):])
-            break
-    if json_content is None:
-        raise ValueError("No valid JSON found in input")
-    
-    d = json.loads(json_content); info = d.get("info",{}); msgs = d.get("messages",[])
-    head = [
-        f"# {info.get('title','Untitled')}\n\n",
-        f"**Session ID:** {info.get('id','')}\n",
-        f"**Directory:** {info.get('directory','')}\n",
-        f"**Created:** {fmt_ts(info.get('time',{}).get('created',0))}\n",
-        f"**Updated:** {fmt_ts(info.get('time',{}).get('updated',0))}\n\n",
-        "---\n\n",
-    ]
-    body = []
-    for m in msgs:
-        mi = m.get("info",{}); ps = m.get("parts",[])
-        body.append("## User\n\n" if mi.get("role")=="user" else fmt_assistant(mi))
-        for p in ps: body.append(fmt_part(p))
-        body.append("---\n\n")
-    return "".join(head + body)
-
-if __name__ == "__main__":
-    # 支持从 stdin 或文件读取
-    import sys
-    if len(sys.argv) == 1:
-        content = sys.stdin.read()
-    else:
-        content = open(sys.argv[1]).read()
-    print(convert(content))
-```
-
-```bash
-opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py > /tmp/session_output.md
-```
-
-### 2B.3 Upload via MCP
-
-**CRITICAL: Upload the converted file directly. DO NOT summarize, truncate, or modify the content.**
-
-```
-wiki_submit_trajectory(
-  session_id="$SESSION_ID",
-  file_path="/tmp/session_output.md"
-)
-```
-
-Upload the file at `/tmp/session_output.md` verbatim - no modifications allowed.
-
-## Step 3: Report Result
+## Step 4: Report Result
 
 ```
 ✓ Uploaded
@@ -411,10 +114,6 @@ Upload the file at `/tmp/session_output.md` verbatim - no modifications allowed.
 - Path:    raw/sessions/uploaded/{session_id}.md
 - Pipeline: knowledge_engine auto-sanitize + extraction
 ```
-
-## Domain Requirement
-
-The transcript must mention "Ascend C" or "AscendC". Otherwise the server routes it to `raw/sessions/to_review/` for manual triage — that is expected, not an error.
 
 ## Error Handling
 
@@ -429,8 +128,8 @@ The transcript must mention "Ascend C" or "AscendC". Otherwise the server routes
 
 ## Notes
 
-- **Zero user interaction** — the agent runs all steps itself.
-- **Format parity** — Claude Code and OpenCode transcripts both render to the same Markdown layout.
-- **Tool details excluded by default** — keeps the upload compact; flip the `tools` flag in the converter to include them.
+- **Platform-isolated converters** — `cc_convert.py` and `oc_convert.py` know nothing about each other. Modifying one cannot break the other.
+- **Adding a new platform** — Drop `scripts/<name>_convert.py` (signature: read transcript source, print Markdown to stdout) and add a `Step 2X` section. SKILL.md stays small.
+- **Format parity** — Both converters target the same Markdown layout so downstream extraction is uniform.
 - **Thinking included** — preserves `thinking` blocks (Claude Code) and `reasoning` parts (OpenCode).
-- **Config-based detection** — checks project config files first (user-controlled), then session database, then transcript directory. Create `.opencode/opencode.json` for OpenCode projects, `.mcp.json` or `.claude/` for Claude Code projects.
+- **Tool details preserved verbatim** — all tool inputs and outputs are kept whole. The only content the converters drop is the runtime plumbing for the converter scripts themselves (writes/Bash creating `/tmp/cc_convert.py` or `/tmp/oc_convert.py`).

@@ -1,11 +1,11 @@
 ---
 name: setup-ascendc-wiki
-description: "Setup MCP connection for AscendC Wiki skills. Run `/setup-ascendc-wiki` before first use of wiki-query or session-upload."
+description: "Setup MCP connection for AscendC Wiki skills. Run `/setup-ascendc-wiki` before first use of ascendc-ask or session-upload."
 ---
 
 # Setup AscendC Wiki Skills
 
-Scaffold the MCP configuration that wiki-query and session-upload skills require.
+Scaffold the MCP configuration that ascendc-ask and session-upload skills require.
 
 This is a prompt-driven skill. Explore, present what's missing, confirm with user, then write.
 
@@ -196,5 +196,5 @@ Tell user explicitly:
 ## Integration
 
 After setup, these skills will work:
-- **wiki-query** — Knowledge retrieval via MCP
+- **ascendc-ask** — Knowledge retrieval via MCP
 - **session-upload** — Trajectory upload via MCP

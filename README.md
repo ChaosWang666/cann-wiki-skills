@@ -38,9 +38,9 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 ### 4. 开始使用
 
 ```
-/wiki-query AscendC 编程模型是什么？
-/wiki-query 帮我写一个 Add 算子
-/wiki-query Matmul 高阶 API 怎么用？
+/ascendc-ask AscendC 编程模型是什么？
+/ascendc-ask 帮我写一个 Add 算子
+/ascendc-ask Matmul 高阶 API 怎么用？
 
 /session-upload  # 上传当前会话轨迹
 ```
@@ -52,7 +52,7 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 | Skill | 命令 | 用途 | 首次使用 |
 |-------|------|------|---------|
 | **setup-ascendc-wiki** | `/setup-ascendc-wiki` | 配置 MCP 连接 | ✓ 必先运行 |
-| **wiki-query** | `/wiki-query <问题>` | 检索 Wiki 知识 | 需要 setup |
+| **ascendc-ask** | `/ascendc-ask <问题>` | 检索 Wiki 知识（合成答案 + 引用） | 需要 setup |
 | **session-upload** | `/session-upload` | 上传会话轨迹 | 需要 setup |
 
 ---
@@ -63,7 +63,7 @@ npx skills@latest add qianbi1999/ascendc-wiki-skills -a claude-code
 
 **用户输入**：
 ```
-/wiki-query AscendC 编程模型是什么？
+/ascendc-ask AscendC 编程模型是什么？
 ```
 
 **Agent 响应**：
@@ -88,7 +88,7 @@ AscendC 编程模型采用 AI Core 三级流水线架构：
 
 **用户输入**：
 ```
-/wiki-query 帮我写一个 Add 算子
+/ascendc-ask 帮我写一个 Add 算子
 ```
 
 **Agent 响应**：
@@ -140,7 +140,7 @@ Session: xxx-xxx-xxx
 │  Agent (Claude Code / OpenCode)    │
 │  ├── Skills (本仓库)               │
 │  │   ├── setup-ascendc-wiki       │ ← 配置 MCP 连接
-│  │   ├── wiki-query               │ ← 调用 MCP 工具
+│  │   ├── ascendc-ask              │ ← 调用 MCP 工具
 │  │   └── session-upload           │ ← 调用 MCP 工具
 │  └── MCP Config                    │
 │      ├── .mcp.json (Claude Code)   │
@@ -168,10 +168,13 @@ ascendc-wiki-skills/
 │   └── wiki/
 │       ├── setup-ascendc-wiki/
 │       │   └── SKILL.md              ← 第一个运行
-│       ├── wiki-query/
-│       │   └── SKILL.md              ← 知识检索
+│       ├── ascendc-ask/
+│       │   └── SKILL.md              ← 知识检索（人类问答入口）
 │       └── session-upload/
-│           └── SKILL.md              ← 轨迹上传
+│           ├── SKILL.md              ← 轨迹上传（检测 + 调度 + 上传）
+│           └── scripts/
+│               ├── cc_convert.py     ← Claude Code 转换器
+│               └── oc_convert.py     ← OpenCode 转换器
 ├── README.md                         ← 本文件
 └── LICENSE
 ```

@@ -1,11 +1,13 @@
 ---
-name: wiki-query
-description: "AscendC Wiki knowledge retrieval. MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/wiki-query`"
+name: ascendc-ask
+description: "AscendC Wiki knowledge retrieval (human-facing). MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/ascendc-ask`."
 ---
 
-# Wiki Query Agent
+# AscendC Ask Agent
 
-Retrieve knowledge from AscendC Kernel Wiki via MCP Server. Uses semantic vector search to find relevant pages, automatically fetches top-3 for synthesis.
+Human-facing knowledge retrieval for AscendC Kernel Wiki via MCP Server. Finds relevant pages, fetches top-3 automatically, and synthesizes a cited answer.
+
+> **Naming note**: this skill was previously called `wiki-query`. It was renamed to `ascendc-ask` because the AscendC-Kernel-Wiki repo's MCP server has its own server-side skill named `wiki-query` (a strict `TASK: search|get_page|get_index` dispatcher invoked by the MCP server's sub-agent). Two skills with the same name in one agent caused routing collisions. This skill is the *human* entry point; the dispatcher is internal to the MCP server and you should never invoke it directly.
 
 ## Prerequisites
 
@@ -13,10 +15,10 @@ Retrieve knowledge from AscendC Kernel Wiki via MCP Server. Uses semantic vector
 
 | Tool | Description |
 |------|-------------|
-| `wiki_search(query, tags?, type?, limit)` | Semantic search, returns pages ranked by similarity + Q-Value |
+| `wiki_search(query, tags?, type?, limit)` | Keyword-overlap search blended with Q-Value, returns ranked page summaries |
 | `wiki_get_page(path)` | Get full page content with frontmatter |
 | `wiki_get_index()` | Get wiki index (optional, for navigation) |
-| `wiki_submit_trajectory(session_id, transcript, source)` | Upload session transcript for feedback |
+| `wiki_submit_trajectory(session_id, content)` | Persist a session transcript Markdown to `raw/sessions/uploaded/{session_id}.md` |
 
 MCP endpoint: `http://localhost:3000/mcp` (streamable-http transport)
 
@@ -24,7 +26,7 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 
 ## Activation (MUST trigger this skill, NOT direct MCP calls)
 
-**CRITICAL**: When MCP tools (`mcp__ascendc-wiki__wiki_search`, `mcp__ascendc-wiki__wiki_get_page`) are available, **ALWAYS use wiki-query skill instead of calling them directly**.
+**CRITICAL**: When MCP tools (`mcp__ascendc-wiki__wiki_search`, `mcp__ascendc-wiki__wiki_get_page`) are available, **ALWAYS use the ascendc-ask skill instead of calling them directly**.
 
 **Why skill is required (not direct MCP):**
 - Intent classification → better search query formulation
@@ -36,13 +38,13 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 
 ---
 
-**Trigger wiki-query when:**
+**Trigger ascendc-ask when:**
 - User mentions "AscendC" / "Ascend C" in any question
 - User asks about AscendC kernel development, operators, APIs, patterns
 - User requests comparison (e.g., "ElementwiseSch vs manual pipeline")
 - User requests how-to (e.g., "how to implement activation operator")
 - User requests coverage (e.g., "which operators use reduction")
-- User explicitly triggers `/wiki-query` or says "search wiki"
+- User explicitly triggers `/ascendc-ask` or says "search wiki"
 
 **Anti-pattern (DO NOT do this):**
 ```
@@ -53,7 +55,7 @@ mcp__ascendc-wiki__wiki_search(query="conv2d", limit=5)  # ❌ bypasses skill
 
 **Correct pattern:**
 ```
-/wiki-query conv2d implementation  # ✅ triggers skill workflow
+/ascendc-ask conv2d implementation  # ✅ triggers skill workflow
 ```
 
 ## Input
@@ -85,25 +87,32 @@ wiki_search(
 )
 ```
 
-Returns results ranked by `0.7 × similarity + 0.3 × qValue`:
+Server-side scoring: `score = 0.7 × keyword_overlap + 0.3 × qValue`
+(`keyword_overlap` is computed against `entry.summary`, `entry.tags`, and `entry.content_path` — see `.claude/QUERY/SKILL.md` in the wiki repo).
+
+Response shape (per the QUERY dispatcher contract):
 
 ```json
 {
   "results": [
     {
-      "path": "guide/concepts/programming-model.md",
-      "title": "Programming Model",
-      "type": "concept",
-      "tags": ["multi_core"],
+      "path": "wiki/static/ascendc/guide/concepts/programming-model.md",
+      "frontmatter": {
+        "type": "concept",
+        "title": "Programming Model",
+        "tags": ["multi_core"],
+        "source": "..."
+      },
       "summary": "...",
-      "source": "...",
-      "qValue": 0.73,
-      "similarity": 0.85
+      "score": 0.85,
+      "qValue": 0.73
     }
   ],
   "total": 15
 }
 ```
+
+Note: title / type / tags / source live inside `frontmatter`, not at the top level. The schema is not 100% stable across runs (the dispatcher is LLM-backed); treat fields beyond `path`, `summary`, `score`, `qValue` as best-effort.
 
 ### Phase C: Batch Fetch Pages
 
@@ -190,26 +199,16 @@ At answer end, include a brief footer:
 💡 Use `/session-upload` to save this session to Wiki
 ```
 
-When user invokes session-upload skill, call MCP `wiki_submit_trajectory`:
+Upload itself is owned by the `session-upload` skill — see its SKILL.md for the full pipeline. The tool signature is:
 
 ```
 wiki_submit_trajectory(
-  session_id: "<UUID v4>",
-  transcript: "<JSONL conversation history>",
-  source: "<agent name>"
+  session_id: "<session id>",
+  content:    "<entire Markdown body of the converted transcript>"
 )
 ```
 
-**Transcript format** (exclude tool return results):
-
-```jsonl
-{"role":"user","content":"..."}
-{"role":"assistant","content":"...","tool_calls":["wiki_search","wiki_get_page"]}
-{"role":"tool","name":"wiki_search","args":{"query":"...","limit":3}}
-{"role":"tool","name":"wiki_get_page","args":{"path":"..."}}
-```
-
-Trajectory stored at `raw/sessions/uploaded/{session_id}.jsonl`.
+Only two parameters: `session_id` and `content`. The server stores the bytes verbatim at `raw/sessions/uploaded/{session_id}.md`; downstream sanitization / extraction is handled by the knowledge engine's monitor process, not this tool.
 
 ## Output Format
 
