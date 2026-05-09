@@ -2,7 +2,7 @@
 """Claude Code JSONL transcript -> Markdown converter.
 
 Reads a single Claude Code session JSONL file and emits a Markdown rendering
-suitable for upload to the AscendC Wiki via wiki_submit_trajectory.
+suitable for upload to the CANN Wiki via wiki_submit_trajectory.
 
 Usage:
     python3 cc_convert.py <session.jsonl> > session_output.md

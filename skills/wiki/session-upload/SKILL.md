@@ -1,11 +1,11 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript (Claude Code or OpenCode) to the AscendC Wiki via MCP. Trigger: `/session-upload`."
+description: "Auto-upload current session transcript (Claude Code or OpenCode) to the CANN Wiki via MCP. Trigger: `/session-upload`."
 ---
 
 # Session Upload
 
-Auto-upload the current session transcript to the AscendC Wiki knowledge base. Works for both **Claude Code** and **OpenCode** — the skill detects which agent is running and dispatches to the matching converter under `scripts/`.
+Auto-upload the current session transcript to the CANN Wiki knowledge base. Works for both **Claude Code** and **OpenCode** — the skill detects which agent is running and dispatches to the matching converter under `scripts/`.
 
 ## Layout
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upload a transcript Markdown to AscendC Wiki via the HTTP MCP endpoint.
+"""Upload a transcript Markdown to CANN Wiki via the HTTP MCP endpoint.
 
 Bypasses the model output-token cap. Calling `wiki_submit_trajectory` as a
 regular `tool_use` forces the entire `content` string through the model's

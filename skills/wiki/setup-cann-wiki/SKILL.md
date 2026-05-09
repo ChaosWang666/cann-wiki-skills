@@ -1,9 +1,9 @@
 ---
 name: setup-cann-wiki
-description: "Setup MCP connection for AscendC Wiki skills. Run `/setup-cann-wiki` before first use of cann-ask or session-upload."
+description: "Setup MCP connection for CANN Wiki skills. Run `/setup-cann-wiki` before first use of cann-ask or session-upload."
 ---
 
-# Setup AscendC Wiki Skills
+# Setup CANN Wiki Skills
 
 Scaffold the MCP configuration that cann-ask and session-upload skills require.
 

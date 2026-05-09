@@ -1,9 +1,9 @@
 ---
 name: cann-ask
-description: "AscendC Wiki knowledge retrieval (human-facing). MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/cann-ask`."
+description: "CANN Wiki knowledge retrieval (human-facing). MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/cann-ask`."
 ---
 
-# AscendC Ask Agent
+# CANN Ask Agent
 
 Human-facing knowledge retrieval for AscendC Kernel Wiki via MCP Server. Finds relevant pages, fetches top-3 automatically, and synthesizes a cited answer.
 
