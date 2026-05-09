@@ -53,7 +53,7 @@ def get_skill_name(text):
     return None
 
 
-_PLUMBING_BASENAMES = ("cc_convert.py", "oc_convert.py", "session_output.md")
+_PLUMBING_BASENAMES = ("cc_convert.py", "oc_convert.py", "mcp_upload.py", "session_output.md")
 
 
 def _is_plumbing_path(path):

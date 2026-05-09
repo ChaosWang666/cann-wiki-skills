@@ -14,10 +14,11 @@ session-upload/
 ├── SKILL.md              # this file — detect + dispatch + upload
 └── scripts/
     ├── cc_convert.py     # Claude Code JSONL → Markdown (used by 2A)
-    └── oc_convert.py     # OpenCode JSON → Markdown   (used by 2B)
+    ├── oc_convert.py     # OpenCode JSON → Markdown   (used by 2B)
+    └── mcp_upload.py     # HTTP MCP uploader (used by 3, both platforms)
 ```
 
-The two converters are independent. Adding a new platform = drop a new converter into `scripts/` and add a branch in Step 2; you should never need to touch the existing converter when working on the other platform.
+The two converters are independent. Adding a new platform = drop a new converter into `scripts/` and add a branch in Step 2; you should never need to touch the existing converter when working on the other platform. `mcp_upload.py` is platform-agnostic — both paths converge on it for Step 3.
 
 ## Prerequisites
 
@@ -86,24 +87,28 @@ The MCP tool signature is exactly:
 wiki_submit_trajectory(session_id: str, content: str) -> dict
 ```
 
-Two parameters, no more (no `source`, no `transcript` alias). The server lands the bytes verbatim at `<trajectory.uploaded_dir>/{session_id}.md`, where `trajectory.uploaded_dir` comes from the server's `config.yaml`. Downstream sanitization and extraction are owned by the knowledge engine's monitor process.
+The server lands the bytes verbatim at `<trajectory.uploaded_dir>/{session_id}.md` (path comes from server's `config.yaml`); downstream sanitization and extraction are owned by the knowledge engine's monitor process.
+
+**Do NOT call `wiki_submit_trajectory` directly as a `tool_use`.** Long `content` bodies (>~13KB) get silently truncated mid-string because the entire JSON tool_use payload — including `content` — has to fit inside the model's max-output-tokens budget. Observed truncation: 13.4KB of a 38KB rendered transcript reached the server. Use the helper `scripts/mcp_upload.py` instead — it POSTs to the MCP HTTP endpoint from a Bash subprocess, so the payload travels over a local socket and bypasses the output-token cap entirely (verified byte-identical at 250KB).
 
 Steps:
 
-1. Read `/tmp/session_output.md` with the `Read` tool (do NOT pipe through `cat`/`head` — those truncate or lose binary safety).
-2. Call the MCP tool with the file body as `content`:
+1. Use the Read tool to fetch `scripts/mcp_upload.py` from this skill's base directory and Write it to `/tmp/mcp_upload.py`.
+2. Run it:
 
+```bash
+python3 /tmp/mcp_upload.py --file /tmp/session_output.md --session-id "$SESSION_ID"
 ```
-wiki_submit_trajectory(
-  session_id="$SESSION_ID",
-  content="<entire Markdown body of /tmp/session_output.md>"
-)
-```
+
+Output is one line: `OK <uploaded path>` on success. On server error or unexpected response the script prints the server payload verbatim and exits non-zero — surface that to the user without paraphrasing.
+
+The script reads the MCP URL from `$ASCENDC_WIKI_MCP_URL` (default `http://localhost:3000/mcp`); pass `--url` to override.
 
 **DO NOT**:
+- Call `wiki_submit_trajectory` directly as a tool_use (truncates per above)
 - Replace content with summaries like "[Full session uploaded]"
-- Truncate the content
-- Pass `file_path=` or `source=` (those parameters do not exist on the server)
+- Hand-truncate the file before upload
+- Pass `file_path=` or `source=` to the MCP tool — those parameters do not exist on the server
 
 ## Step 4: Report Result
 

@@ -94,7 +94,7 @@ def fmt_part(p, thinking=True, tools=True):
         if tool_name == "write" and s.get("input"):
             input_data = s.get("input", {})
             file_path = input_data.get("filePath", "")
-            if file_path == "/tmp/oc_convert.py":
+            if file_path in ("/tmp/oc_convert.py", "/tmp/mcp_upload.py"):
                 out += f"\n**Input:** filePath: {file_path}\n"
                 return out + "\n"
         if s.get("input"):
