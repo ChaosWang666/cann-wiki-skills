@@ -22,7 +22,7 @@ The two converters are independent. Adding a new platform = drop a new converter
 
 ## Prerequisites
 
-1. MCP Server is running and `wiki_submit_trajectory` is available — run `/setup-ascendc-wiki` first.
+1. MCP Server is running and `wiki_submit_trajectory` is available — run `/setup-cann-wiki` first.
 2. **Claude Code path**: session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
    **OpenCode path**: OpenCode CLI (`opencode`) is installed and has at least one session.
 3. The transcript should mention "Ascend C" / "AscendC" — otherwise the downstream `knowledge_engine` ingest pipeline routes it to the configured to-review directory for manual triage (expected, not an error). The MCP server itself only persists; routing is decided downstream.
@@ -102,7 +102,7 @@ python3 /tmp/mcp_upload.py --file /tmp/session_output.md --session-id "$SESSION_
 
 Output is one line: `OK <uploaded path>` on success. On server error or unexpected response the script prints the server payload verbatim and exits non-zero — surface that to the user without paraphrasing.
 
-The script reads the MCP URL from `$ASCENDC_WIKI_MCP_URL` (default `http://localhost:3000/mcp`); pass `--url` to override.
+The script reads the MCP URL from `$CANN_WIKI_MCP_URL` (default `http://localhost:3000/mcp`); pass `--url` to override.
 
 **DO NOT**:
 - Call `wiki_submit_trajectory` directly as a tool_use (truncates per above)
@@ -125,7 +125,7 @@ The script reads the MCP URL from `$ASCENDC_WIKI_MCP_URL` (default `http://local
 | Scenario | Handling |
 |---|---|
 | No `~/.claude/projects/<cwd>/*.jsonl` and no `opencode` CLI | "No agent transcript source found — run from inside Claude Code or install opencode" |
-| MCP not configured | "Run `/setup-ascendc-wiki` first" |
+| MCP not configured | "Run `/setup-cann-wiki` first" |
 | `wiki_submit_trajectory` not registered | "MCP tool missing — restart agent after setup" |
 | Empty transcript | "No messages to upload" |
 | JSON/JSONL parse error | "Skipping malformed line, continuing" |

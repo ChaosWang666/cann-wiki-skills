@@ -11,7 +11,7 @@ Usage:
     python3 mcp_upload.py --file /tmp/session_output.md --session-id <id>
 
 URL resolution order:
-    --url flag  >  $ASCENDC_WIKI_MCP_URL  >  http://localhost:3000/mcp
+    --url flag  >  $CANN_WIKI_MCP_URL  >  http://localhost:3000/mcp
 """
 import argparse
 import json
@@ -48,7 +48,7 @@ def main():
     p.add_argument("--session-id", required=True, help="Session id used as <session_id>.md filename")
     p.add_argument(
         "--url",
-        default=os.environ.get("ASCENDC_WIKI_MCP_URL", "http://localhost:3000/mcp"),
+        default=os.environ.get("CANN_WIKI_MCP_URL", "http://localhost:3000/mcp"),
         help="MCP HTTP endpoint (default: http://localhost:3000/mcp)",
     )
     args = p.parse_args()

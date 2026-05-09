@@ -1,11 +1,11 @@
 ---
-name: setup-ascendc-wiki
-description: "Setup MCP connection for AscendC Wiki skills. Run `/setup-ascendc-wiki` before first use of ascendc-ask or session-upload."
+name: setup-cann-wiki
+description: "Setup MCP connection for AscendC Wiki skills. Run `/setup-cann-wiki` before first use of cann-ask or session-upload."
 ---
 
 # Setup AscendC Wiki Skills
 
-Scaffold the MCP configuration that ascendc-ask and session-upload skills require.
+Scaffold the MCP configuration that cann-ask and session-upload skills require.
 
 This is a prompt-driven skill. Explore, present what's missing, confirm with user, then write.
 
@@ -87,7 +87,7 @@ Show user the configuration needed:
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "ascendc-wiki": {
+    "cann-wiki": {
       "type": "remote",
       "url": "http://localhost:3000/mcp",
       "enabled": true
@@ -100,17 +100,17 @@ Show user the configuration needed:
 
 ```bash
 # Project scope (commits to repo via .mcp.json)
-claude mcp add --transport http --scope project ascendc-wiki http://localhost:3000/mcp
+claude mcp add --transport http --scope project cann-wiki http://localhost:3000/mcp
 
 # Or user scope (cross-project, lives in user settings)
-claude mcp add --transport http --scope user ascendc-wiki http://localhost:3000/mcp
+claude mcp add --transport http --scope user cann-wiki http://localhost:3000/mcp
 ```
 
 Equivalent hand-written `.mcp.json` if the user prefers to edit JSON directly:
 ```json
 {
   "mcpServers": {
-    "ascendc-wiki": {
+    "cann-wiki": {
       "type": "http",
       "url": "http://localhost:3000/mcp"
     }
@@ -120,14 +120,14 @@ Equivalent hand-written `.mcp.json` if the user prefers to edit JSON directly:
 
 After running the command (or saving the file), restart your agent (`/exit`) and verify with:
 ```bash
-claude mcp list           # should show ascendc-wiki as connected (Claude Code)
+claude mcp list           # should show cann-wiki as connected (Claude Code)
 ```
 
 **For Claude Desktop** (`claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
-    "ascendc-wiki": {
+    "cann-wiki": {
       "command": "python",
       "args": ["path/to/AscendC-Kernel-Wiki/mcp-server/server.py", "--port", "3000"],
       "env": {
@@ -171,7 +171,7 @@ Tell user explicitly:
 1. **退出当前 agent 会话**：输入 `/exit`（OpenCode 和 Claude Code 都支持）
 2. **重新启动 agent**
 3. 验证 MCP 工具可用：
-   - Claude Code：运行 `/mcp` 应显示 ascendc-wiki
+   - Claude Code：运行 `/mcp` 应显示 cann-wiki
    - OpenCode：MCP 工具应出现在工具列表中
 
 ### 不重启的后果
@@ -203,5 +203,5 @@ Tell user explicitly:
 ## Integration
 
 After setup, these skills will work:
-- **ascendc-ask** — Knowledge retrieval via MCP
+- **cann-ask** — Knowledge retrieval via MCP
 - **session-upload** — Trajectory upload via MCP

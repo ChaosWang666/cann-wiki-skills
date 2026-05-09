@@ -60,7 +60,7 @@ def _is_plumbing_path(path):
     """True if path targets a file that this upload skill itself produces or consumes.
 
     Matches by basename so it catches both source locations
-    (.../ascendc-wiki-skills/skills/wiki/session-upload/scripts/*.py) and the
+    (.../cann-wiki-skills/skills/wiki/session-upload/scripts/*.py) and the
     runtime artifacts (/tmp/cc_convert.py, /tmp/session_output.md). These bodies
     are upload plumbing, not knowledge — we strip their content but keep the
     call signature.

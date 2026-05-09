@@ -1,8 +1,8 @@
 {
-  "name": "ascendc-wiki-skills",
+  "name": "cann-wiki-skills",
   "skills": [
-    "./skills/wiki/setup-ascendc-wiki",
-    "./skills/wiki/ascendc-ask",
+    "./skills/wiki/setup-cann-wiki",
+    "./skills/wiki/cann-ask",
     "./skills/wiki/session-upload"
   ]
 }

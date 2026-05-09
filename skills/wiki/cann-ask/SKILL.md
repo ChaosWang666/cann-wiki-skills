@@ -1,13 +1,11 @@
 ---
-name: ascendc-ask
-description: "AscendC Wiki knowledge retrieval (human-facing). MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/ascendc-ask`."
+name: cann-ask
+description: "AscendC Wiki knowledge retrieval (human-facing). MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/cann-ask`."
 ---
 
 # AscendC Ask Agent
 
 Human-facing knowledge retrieval for AscendC Kernel Wiki via MCP Server. Finds relevant pages, fetches top-3 automatically, and synthesizes a cited answer.
-
-> **Naming note**: this skill was previously called `wiki-query`. It was renamed to `ascendc-ask` because earlier versions of the AscendC-Kernel-Wiki MCP server had an internal `wiki-query` sub-agent dispatcher of the same name, and the two collided when both were active in one agent. v2 of the server has removed that internal dispatcher (retrievers are now invoked directly), but the rename is preserved as the public entry point so the human-facing trigger stays stable across server versions.
 
 ## Prerequisites
 
@@ -26,7 +24,7 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 
 ## Activation (MUST trigger this skill, NOT direct MCP calls)
 
-**CRITICAL**: When MCP tools (`mcp__ascendc-wiki__wiki_search`, `mcp__ascendc-wiki__wiki_get_page`) are available, **ALWAYS use the ascendc-ask skill instead of calling them directly**.
+**CRITICAL**: When MCP tools (`mcp__cann-wiki__wiki_search`, `mcp__cann-wiki__wiki_get_page`) are available, **ALWAYS use the cann-ask skill instead of calling them directly**.
 
 **Why skill is required (not direct MCP):**
 - Intent classification → better search query formulation
@@ -38,24 +36,24 @@ If MCP Server is not running, prompt user to start it first. To verify server st
 
 ---
 
-**Trigger ascendc-ask when:**
+**Trigger cann-ask when:**
 - User mentions "AscendC" / "Ascend C" in any question
 - User asks about AscendC kernel development, operators, APIs, patterns
 - User requests comparison (e.g., "ElementwiseSch vs manual pipeline")
 - User requests how-to (e.g., "how to implement activation operator")
 - User requests coverage (e.g., "which operators use reduction")
-- User explicitly triggers `/ascendc-ask` or says "search wiki"
+- User explicitly triggers `/cann-ask` or says "search wiki"
 
 **Anti-pattern (DO NOT do this):**
 ```
 # Wrong: agent discovers MCP tools via ToolSearch, then calls directly
-ToolSearch("select:mcp__ascendc-wiki__wiki_search")
-mcp__ascendc-wiki__wiki_search(query="conv2d", limit=5)  # ❌ bypasses skill
+ToolSearch("select:mcp__cann-wiki__wiki_search")
+mcp__cann-wiki__wiki_search(query="conv2d", limit=5)  # ❌ bypasses skill
 ```
 
 **Correct pattern:**
 ```
-/ascendc-ask conv2d implementation  # ✅ triggers skill workflow
+/cann-ask conv2d implementation  # ✅ triggers skill workflow
 ```
 
 ## Input
