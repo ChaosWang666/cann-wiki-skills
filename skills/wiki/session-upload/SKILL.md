@@ -53,9 +53,17 @@ echo "Agent: $AGENT"
 
 Then proceed to **2A** if `AGENT=claude-code`, or **2B** if `AGENT=opencode`.
 
-## Step 2A: Claude Code Path
+## Resolving the skill base directory
 
-The converter lives at `scripts/cc_convert.py` next to this SKILL.md. Use the Read tool to fetch it from this skill's base directory and Write it to `/tmp/cc_convert.py`, then run it against the latest session JSONL.
+All scripts under `scripts/` are run **in place** from this skill's base directory — do **not** Read+Write them to `/tmp` (that wasted ~4K output tokens per invocation). Set `SKILL_DIR` once at the top of the Bash session, then reference it in every step:
+
+```bash
+SKILL_DIR="<absolute path shown at 'Base directory for this skill:' in your context>"
+```
+
+Substitute the literal path the agent has in its skill-load header. Claude Code emits it as a one-line prefix; OpenCode wraps skill content in `<skill_content name=...>` and may not surface an absolute path — in that case fall back to `find ~ /usr/local /opt -maxdepth 6 -type d -name session-upload 2>/dev/null | head -1`.
+
+## Step 2A: Claude Code Path
 
 ```bash
 ENC_CWD="$(pwd | sed 's|/|-|g')"
@@ -63,21 +71,19 @@ CC_DIR="$HOME/.claude/projects/$ENC_CWD"
 LATEST=$(ls -t "$CC_DIR"/*.jsonl 2>/dev/null | head -1)
 SESSION_ID=$(basename "$LATEST" .jsonl)
 
-python3 /tmp/cc_convert.py "$LATEST" > /tmp/session_output.md
+python3 "$SKILL_DIR/scripts/cc_convert.py" "$LATEST" > /tmp/session_output.md
 ```
 
-Output: `/tmp/session_output.md`. The converter is self-contained — no OpenCode coupling, no shared mutable state. Continue to **Step 3 (Upload)**.
+Output: `/tmp/session_output.md`. Continue to **Step 3 (Upload)**.
 
 ## Step 2B: OpenCode Path
 
-The converter lives at `scripts/oc_convert.py` next to this SKILL.md. Use the Read tool to fetch it from this skill's base directory and Write it to `/tmp/oc_convert.py`, then pipe `opencode export` into it.
-
 ```bash
 SESSION_ID=$(opencode session list -n 1 --format json | jq -r '.[0].id')
-opencode export "$SESSION_ID" 2>/dev/null | python3 /tmp/oc_convert.py > /tmp/session_output.md
+opencode export "$SESSION_ID" 2>/dev/null | python3 "$SKILL_DIR/scripts/oc_convert.py" > /tmp/session_output.md
 ```
 
-Output: `/tmp/session_output.md`. The converter is self-contained — no Claude Code coupling. Continue to **Step 3 (Upload)**.
+Output: `/tmp/session_output.md`. Continue to **Step 3 (Upload)**.
 
 ## Step 3: Upload via MCP
 
@@ -91,13 +97,10 @@ The server lands the bytes verbatim at `<trajectory.uploaded_dir>/{session_id}.m
 
 **Do NOT call `wiki_submit_trajectory` directly as a `tool_use`.** Long `content` bodies (>~13KB) get silently truncated mid-string because the entire JSON tool_use payload — including `content` — has to fit inside the model's max-output-tokens budget. Observed truncation: 13.4KB of a 38KB rendered transcript reached the server. Use the helper `scripts/mcp_upload.py` instead — it POSTs to the MCP HTTP endpoint from a Bash subprocess, so the payload travels over a local socket and bypasses the output-token cap entirely (verified byte-identical at 250KB).
 
-Steps:
-
-1. Use the Read tool to fetch `scripts/mcp_upload.py` from this skill's base directory and Write it to `/tmp/mcp_upload.py`.
-2. Run it:
+Run it directly from `$SKILL_DIR` (set in the section above) — no need to copy:
 
 ```bash
-python3 /tmp/mcp_upload.py --file /tmp/session_output.md --session-id "$SESSION_ID"
+python3 "$SKILL_DIR/scripts/mcp_upload.py" --file /tmp/session_output.md --session-id "$SESSION_ID"
 ```
 
 Output is one line: `OK <uploaded path>` on success. On server error or unexpected response the script prints the server payload verbatim and exits non-zero — surface that to the user without paraphrasing.
@@ -138,4 +141,4 @@ The script reads the MCP URL from `$CANN_WIKI_MCP_URL` (default `http://localhos
 - **Adding a new platform** — Drop `scripts/<name>_convert.py` (signature: read transcript source, print Markdown to stdout) and add a `Step 2X` section. SKILL.md stays small.
 - **Format parity** — Both converters target the same Markdown layout so downstream extraction is uniform.
 - **Thinking included** — preserves `thinking` blocks (Claude Code) and `reasoning` parts (OpenCode).
-- **Tool details preserved verbatim** — all tool inputs and outputs are kept whole. The only content the converters drop is the runtime plumbing for the converter scripts themselves (writes/Bash creating `/tmp/cc_convert.py` or `/tmp/oc_convert.py`).
+- **Tool details preserved verbatim** — all tool inputs and outputs are kept whole. The converters' `_PLUMBING_BASENAMES` filter strips any rare model-side Read/Write of converter / uploader scripts (in case of debugging) by basename — works regardless of source path. Normal flow no longer copies scripts to `/tmp`, so the filter is a safety net rather than load-bearing.
