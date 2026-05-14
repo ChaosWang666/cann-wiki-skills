@@ -15,7 +15,9 @@
 set -euo pipefail
 
 # Resolve cc_convert.py relative to this script so the repo can move freely.
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Follow symlinks (readlink -f) so installs via `ln -s` to PATH still work.
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 CC_CONVERT="$SCRIPT_DIR/../skills/wiki/session-upload/scripts/cc_convert.py"
 
 if [[ $# -lt 1 || "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
