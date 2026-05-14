@@ -57,6 +57,25 @@ npx skills@latest add qianbi1999/cann-wiki-skills -a claude-code
 
 ---
 
+## 辅助脚本
+
+### `scripts/find-session.sh` — 按关键词检索并渲染本地 session
+
+在 Claude Code session JSONL 中检索关键词，命中后调用 `cc_convert.py` 渲染成 Markdown。
+
+```bash
+# 默认从 ~/.claude/projects/<encoded-pwd>/ 检索（pwd 路径中 '/' 换成 '-'）
+./scripts/find-session.sh "multi-head self-attention"
+
+# 也可指定其他 session 目录
+./scripts/find-session.sh "kernel fusion" /path/to/session/dir
+```
+
+- 仅检索 `*.jsonl`；目录下没有 jsonl 文件时直接提醒退出
+- 命中的 session 会渲染到 `$PWD/sessions-<keyword-slug>/`（已加入 `.gitignore`）
+
+---
+
 ## 完整使用示例
 
 ### 示例 1：查询知识
@@ -176,6 +195,8 @@ cann-wiki-skills/
 │               ├── cc_convert.py     ← Claude Code 转换器
 │               ├── oc_convert.py     ← OpenCode 转换器
 │               └── mcp_upload.py     ← HTTP MCP 上传器（绕过模型 token cap）
+├── scripts/
+│   └── find-session.sh              ← 按关键词检索并渲染本地 session
 ├── README.md                         ← 本文件
 └── LICENSE
 ```
