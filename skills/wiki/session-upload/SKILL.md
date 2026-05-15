@@ -1,35 +1,35 @@
 ---
 name: session-upload
-description: "Auto-upload current session transcript (Claude Code or OpenCode) to the CANN Wiki via MCP. Trigger: `/session-upload`."
+description: "通过 MCP 自动上传当前会话轨迹（Claude Code 或 OpenCode）到 CANN Wiki。触发命令：`/session-upload`。"
 ---
 
 # Session Upload
 
-Auto-upload the current session transcript to the CANN Wiki knowledge base. Works for both **Claude Code** and **OpenCode** — the skill detects which agent is running and dispatches to the matching converter under `scripts/`.
+自动把当前会话轨迹上传到 CANN Wiki 知识库。同时支持 **Claude Code** 和 **OpenCode** —— skill 会检测当前运行的 agent 并 dispatch 到 `scripts/` 下对应的转换器。
 
-## Layout
+## 文件布局
 
 ```
 session-upload/
-├── SKILL.md              # this file — detect + dispatch + upload
+├── SKILL.md              # 本文件 —— 检测 + dispatch + 上传
 └── scripts/
-    ├── cc_convert.py     # Claude Code JSONL → Markdown (used by 2A)
-    ├── oc_convert.py     # OpenCode JSON → Markdown   (used by 2B)
-    └── mcp_upload.py     # HTTP MCP uploader (used by 3, both platforms)
+    ├── cc_convert.py     # Claude Code JSONL → Markdown（用于 2A）
+    ├── oc_convert.py     # OpenCode JSON → Markdown（用于 2B）
+    └── mcp_upload.py     # HTTP MCP 上传器（用于 3，两端共用）
 ```
 
-The two converters are independent. Adding a new platform = drop a new converter into `scripts/` and add a branch in Step 2; you should never need to touch the existing converter when working on the other platform. `mcp_upload.py` is platform-agnostic — both paths converge on it for Step 3.
+两个转换器互相独立。新增平台 = 在 `scripts/` 下加一个新转换器，并在 Step 2 加一个分支；处理另一平台时永远不需要动现有转换器。`mcp_upload.py` 与平台无关，两条路径在 Step 3 汇聚到它。
 
-## Prerequisites
+## 前置条件
 
-1. MCP Server is running and `wiki_submit_trajectory` is available — run `/setup-cann-wiki` first.
-2. **Claude Code path**: session is being run inside Claude Code (transcripts under `~/.claude/projects/`).
-   **OpenCode path**: OpenCode CLI (`opencode`) is installed and has at least one session.
-3. The transcript should mention "Ascend C" / "AscendC" — otherwise the downstream `knowledge_engine` ingest pipeline routes it to the configured to-review directory for manual triage (expected, not an error). The MCP server itself only persists; routing is decided downstream.
+1. MCP Server 已启动且 `wiki_submit_trajectory` 可用 —— 先跑 `/setup-cann-wiki`。
+2. **Claude Code 路径**：会话在 Claude Code 内运行（轨迹位于 `~/.claude/projects/`）。
+   **OpenCode 路径**：已安装 OpenCode CLI（`opencode`）且至少有一个 session。
+3. 轨迹中需要出现 "Ascend C" / "AscendC" —— 否则下游 `knowledge_engine` ingest 管线会把它路由到配置的待审 (to-review) 目录由人工 triage（这是预期行为，不算错误）。MCP server 自身只负责持久化；路由由下游决定。
 
-## Step 1: Detect Agent
+## Step 1：检测 Agent
 
-Pick the platform branch. **Priority: project config > active session > historical files**.
+挑选平台分支。**优先级：项目配置 > 活跃 session > 历史文件**。
 
 ```bash
 if [ -f ".opencode/opencode.json" ] || [ -f ".agents/skills" ]; then
@@ -51,19 +51,19 @@ fi
 echo "Agent: $AGENT"
 ```
 
-Then proceed to **2A** if `AGENT=claude-code`, or **2B** if `AGENT=opencode`.
+之后：若 `AGENT=claude-code` → 走 **2A**；若 `AGENT=opencode` → 走 **2B**。
 
-## Resolving the skill base directory
+## 解析 skill 基础目录
 
-All scripts under `scripts/` are run **in place** from this skill's base directory — do **not** Read+Write them to `/tmp` (that wasted ~4K output tokens per invocation). Set `SKILL_DIR` once at the top of the Bash session, then reference it in every step:
+`scripts/` 下所有脚本**就地**在本 skill 的基础目录里运行 —— **不要** Read+Write 到 `/tmp`（之前那种做法每次浪费约 4K 输出 token）。在 Bash 会话最开始设一次 `SKILL_DIR`，之后所有步骤都引用它：
 
 ```bash
-SKILL_DIR="<absolute path shown at 'Base directory for this skill:' in your context>"
+SKILL_DIR="<在 'Base directory for this skill:' 处显示的绝对路径>"
 ```
 
-Substitute the literal path the agent has in its skill-load header. Claude Code emits it as a one-line prefix; OpenCode wraps skill content in `<skill_content name=...>` and may not surface an absolute path — in that case fall back to `find ~ /usr/local /opt -maxdepth 6 -type d -name session-upload 2>/dev/null | head -1`.
+把 agent 在 skill 加载头部给出的字面路径填进去。Claude Code 会作为单行前缀输出；OpenCode 把 skill 内容包在 `<skill_content name=...>` 里，可能不会暴露绝对路径 —— 这种情况下退回到 `find ~ /usr/local /opt -maxdepth 6 -type d -name session-upload 2>/dev/null | head -1`。
 
-## Step 2A: Claude Code Path
+## Step 2A：Claude Code 路径
 
 ```bash
 ENC_CWD="$(pwd | sed 's|/|-|g')"
@@ -74,71 +74,71 @@ SESSION_ID=$(basename "$LATEST" .jsonl)
 python3 "$SKILL_DIR/scripts/cc_convert.py" "$LATEST" > /tmp/session_output.md
 ```
 
-Output: `/tmp/session_output.md`. Continue to **Step 3 (Upload)**.
+输出：`/tmp/session_output.md`。继续 **Step 3（上传）**。
 
-## Step 2B: OpenCode Path
+## Step 2B：OpenCode 路径
 
 ```bash
 SESSION_ID=$(opencode session list -n 1 --format json | jq -r '.[0].id')
 opencode export "$SESSION_ID" 2>/dev/null | python3 "$SKILL_DIR/scripts/oc_convert.py" > /tmp/session_output.md
 ```
 
-Output: `/tmp/session_output.md`. Continue to **Step 3 (Upload)**.
+输出：`/tmp/session_output.md`。继续 **Step 3（上传）**。
 
-## Step 3: Upload via MCP
+## Step 3：通过 MCP 上传
 
-The MCP tool signature is exactly:
+MCP 工具签名就是这样：
 
 ```
 wiki_submit_trajectory(session_id: str, content: str) -> dict
 ```
 
-The server lands the bytes verbatim at `<trajectory.uploaded_dir>/{session_id}.md` (path comes from server's `config.yaml`); downstream sanitization and extraction are owned by the knowledge engine's monitor process.
+Server 把字节原样落到 `<trajectory.uploaded_dir>/{session_id}.md`（路径来自 server 的 `config.yaml`）；下游的脱敏和抽取由 knowledge engine 的 monitor 进程负责。
 
-**Do NOT call `wiki_submit_trajectory` directly as a `tool_use`.** Long `content` bodies (>~13KB) get silently truncated mid-string because the entire JSON tool_use payload — including `content` — has to fit inside the model's max-output-tokens budget. Observed truncation: 13.4KB of a 38KB rendered transcript reached the server. Use the helper `scripts/mcp_upload.py` instead — it POSTs to the MCP HTTP endpoint from a Bash subprocess, so the payload travels over a local socket and bypasses the output-token cap entirely (verified byte-identical at 250KB).
+**不要直接以 `tool_use` 形式调用 `wiki_submit_trajectory`。** 长 `content`（>~13KB）会被静默截断 —— 整个 JSON tool_use payload（含 `content`）必须塞进模型的 max-output-tokens 预算里。已观察到的截断：38KB 渲染轨迹只有 13.4KB 到了 server。改用辅助脚本 `scripts/mcp_upload.py` —— 它从 Bash 子进程 POST 到 MCP HTTP endpoint，payload 走本地 socket，完全绕开 output-token 上限（已在 250KB 上验证字节级一致）。
 
-Run it directly from `$SKILL_DIR` (set in the section above) — no need to copy:
+直接从 `$SKILL_DIR`（上一节已设）运行，不需要复制：
 
 ```bash
 python3 "$SKILL_DIR/scripts/mcp_upload.py" --file /tmp/session_output.md --session-id "$SESSION_ID"
 ```
 
-Output is one line: `OK <uploaded path>` on success. On server error or unexpected response the script prints the server payload verbatim and exits non-zero — surface that to the user without paraphrasing.
+成功时输出一行：`OK <uploaded path>`。Server 报错或返回意外响应时，脚本原样打印 server payload 并以非零退出码退出 —— 原样转给用户，不要改写。
 
-The script reads the MCP URL from `$CANN_WIKI_MCP_URL` (default `http://localhost:3000/mcp`); pass `--url` to override.
+脚本从 `$CANN_WIKI_MCP_URL` 读取 MCP URL（默认 `http://localhost:3000/mcp`）；用 `--url` 可以覆盖。
 
-**DO NOT**:
-- Call `wiki_submit_trajectory` directly as a tool_use (truncates per above)
-- Replace content with summaries like "[Full session uploaded]"
-- Hand-truncate the file before upload
-- Pass `file_path=` or `source=` to the MCP tool — those parameters do not exist on the server
+**禁止**：
+- 把 `wiki_submit_trajectory` 当 tool_use 直接调用（如上所述会截断）
+- 把内容替换成 "[Full session uploaded]" 之类的摘要
+- 上传前手动截断文件
+- 给 MCP 工具传 `file_path=` 或 `source=` —— 这些参数在 server 上不存在
 
-## Step 4: Report Result
+## Step 4：汇报结果
 
 ```
 ✓ Uploaded
 - Agent:   claude-code | opencode
 - Session: {session_id}
-- Path:    <trajectory.uploaded_dir>/{session_id}.md  (resolved from server config.yaml — do NOT hard-code)
-- Pipeline: knowledge_engine auto-sanitize + extraction
+- Path:    <trajectory.uploaded_dir>/{session_id}.md  （来自 server config.yaml —— **不要**硬编码）
+- Pipeline: knowledge_engine 自动脱敏 + 抽取
 ```
 
-## Error Handling
+## 错误处理
 
-| Scenario | Handling |
+| 场景 | 处理 |
 |---|---|
-| No `~/.claude/projects/<cwd>/*.jsonl` and no `opencode` CLI | "No agent transcript source found — run from inside Claude Code or install opencode" |
-| MCP not configured | "Run `/setup-cann-wiki` first" |
-| `wiki_submit_trajectory` not registered | "MCP tool missing — restart agent after setup" |
-| Empty transcript | "No messages to upload" |
-| JSON/JSONL parse error | "Skipping malformed line, continuing" |
-| Server returns `{status: "error", message: "..."}` | Surface the `message` payload to the user verbatim — don't paraphrase or swallow |
-| Network/API error | "Network error, retry later" |
+| `~/.claude/projects/<cwd>/*.jsonl` 不存在且没有 `opencode` CLI | "找不到 agent 轨迹来源 —— 请在 Claude Code 内运行，或安装 opencode" |
+| MCP 未配置 | "先跑 `/setup-cann-wiki`" |
+| `wiki_submit_trajectory` 未注册 | "MCP 工具缺失 —— setup 后请重启 agent" |
+| 轨迹为空 | "没有消息可上传" |
+| JSON/JSONL 解析错误 | "跳过坏行，继续" |
+| Server 返回 `{status: "error", message: "..."}` | 把 `message` 字段原样转给用户 —— 不要改写或吞掉 |
+| 网络 / API 错误 | "网络错误，稍后重试" |
 
-## Notes
+## 注意事项
 
-- **Platform-isolated converters** — `cc_convert.py` and `oc_convert.py` know nothing about each other. Modifying one cannot break the other.
-- **Adding a new platform** — Drop `scripts/<name>_convert.py` (signature: read transcript source, print Markdown to stdout) and add a `Step 2X` section. SKILL.md stays small.
-- **Format parity** — Both converters target the same Markdown layout so downstream extraction is uniform.
-- **Thinking included** — preserves `thinking` blocks (Claude Code) and `reasoning` parts (OpenCode).
-- **Tool details preserved verbatim** — all tool inputs and outputs are kept whole. The converters' `_PLUMBING_BASENAMES` filter strips any rare model-side Read/Write of converter / uploader scripts (in case of debugging) by basename — works regardless of source path. Normal flow no longer copies scripts to `/tmp`, so the filter is a safety net rather than load-bearing.
+- **平台隔离的转换器** —— `cc_convert.py` 和 `oc_convert.py` 互不知情。改一个不会破坏另一个。
+- **新增平台** —— 在 `scripts/` 下加一个 `<name>_convert.py`（签名：读轨迹源，把 Markdown 打到 stdout），并加一节 `Step 2X`。SKILL.md 保持精简。
+- **格式对齐** —— 两个转换器输出同一种 Markdown 布局，下游抽取统一。
+- **保留 thinking** —— 保留 `thinking` 块（Claude Code）和 `reasoning` 部分（OpenCode）。
+- **工具细节原样保留** —— 所有 tool input/output 完整保留。转换器的 `_PLUMBING_BASENAMES` 过滤器按 basename 剥离那些罕见的、模型自己 Read/Write 转换器 / 上传器脚本的情形（调试场景），与源路径无关。正常流程不再把脚本复制到 `/tmp`，所以这个过滤器更像安全网而非主链路。

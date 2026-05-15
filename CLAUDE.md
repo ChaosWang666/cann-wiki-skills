@@ -1,20 +1,17 @@
 # cann-wiki-skills
 
-CANN Wiki knowledge-retrieval and trajectory-upload skills for Claude Code and
-OpenCode. The user-facing skills live under `skills/wiki/`. The MCP server,
-knowledge engine, and AscendC Kernel Wiki content live in a sibling
-`AscendC-Kernel-Wiki` repo (treated as read-only upstream from this repo).
+面向 Claude Code 和 OpenCode 的 CANN Wiki 知识检索与轨迹上传 skills。面向用户的 skill 位于 `skills/wiki/`。MCP server、knowledge engine 和 AscendC Kernel Wiki 内容位于相邻的 `AscendC-Kernel-Wiki` 仓（对本仓而言是只读上游）。
 
 ## Agent skills
 
 ### Issue tracker
 
-GitHub Issues at `qianbi1999/cann-wiki-skills`, accessed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+GitHub Issues 位于 `qianbi1999/cann-wiki-skills`，通过 `gh` CLI 访问。详见 `docs/agents/issue-tracker.md`。
 
 ### Triage labels
 
-Canonical five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+五个角色的规范化标签词汇表（`needs-triage`、`needs-info`、`ready-for-agent`、`ready-for-human`、`wontfix`）。详见 `docs/agents/triage-labels.md`。
 
 ### Domain docs
 
-Single-context repo: one `CONTEXT.md` + `docs/adr/` at the root. See `docs/agents/domain.md`.
+单 context 仓：根目录一份 `CONTEXT.md` + `docs/adr/`。详见 `docs/agents/domain.md`。

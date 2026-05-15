@@ -1,88 +1,88 @@
 ---
 name: setup-cann-wiki
-description: "Setup MCP connection for CANN Wiki skills. Run `/setup-cann-wiki` before first use of cann-ask or session-upload."
+description: "为 CANN Wiki 系列 skill 配置 MCP 连接。首次使用 cann-ask 或 session-upload 前先运行 `/setup-cann-wiki`。"
 ---
 
 # Setup CANN Wiki Skills
 
-Scaffold the MCP configuration that cann-ask and session-upload skills require.
+为 cann-ask 和 session-upload skills 搭建所需的 MCP 配置。
 
-This is a prompt-driven skill. Explore, present what's missing, confirm with user, then write.
+这是一个 prompt 驱动的 skill：先探测，呈现缺什么，与用户确认后再写入。
 
-## Prerequisites Check
+## 前置检查
 
-Before setup, check:
+setup 之前，检查：
 
-1. **MCP Server running?**
-   - Try calling `wiki_search("test", limit=1)` MCP tool (a no-op probe)
-   - Or check if port 3000 is listening: `curl -sI http://localhost:3000/mcp | head -3` (401/406 are healthy — they mean the streamable-http endpoint is up but the bare request is missing MCP headers)
-   - If not running, prompt user to start it first
+1. **MCP Server 在跑吗？**
+   - 尝试调用 `wiki_search("test", limit=1)` MCP 工具（无副作用的探测）
+   - 或检查 3000 端口是否在监听：`curl -sI http://localhost:3000/mcp | head -3`（401/406 都是健康响应 —— 说明 streamable-http endpoint 已起，只是裸请求缺 MCP header）
+   - 没在跑 → 提示用户先启动
 
-2. **Agent MCP config exists?**
-   - OpenCode: `.opencode/opencode.json`
-   - Claude Code: `.mcp.json` or `claude_desktop_config.json`
-   - If missing, create it
+2. **Agent MCP 配置文件存在吗？**
+   - OpenCode：`.opencode/opencode.json`
+   - Claude Code：`.mcp.json` 或 `claude_desktop_config.json`
+   - 缺失就创建
 
-3. **MCP tools available?**
-   - Required v2 tools: `wiki_search`, `wiki_get_page` (batch by `ids`), `wiki_submit_trajectory`
-   - `wiki_get_index` still exists but is **[DEPRECATED]** — do not depend on it for health checks or page navigation
-   - After config, verify tools appear in agent's MCP tool list
+3. **MCP 工具可用吗？**
+   - 必需的 v2 工具：`wiki_search`、`wiki_get_page`（按 `ids` 批量）、`wiki_submit_trajectory`
+   - `wiki_get_index` 还在但已 **【弃用】** —— 不要依赖它做健康检查或页面导航
+   - 配置完成后，确认这些工具出现在 agent 的 MCP 工具列表里
 
-## Process
+## 流程
 
-### Step 1: Check MCP Server Status
+### Step 1：检查 MCP Server 状态
 
-Verify MCP Server is running:
+确认 MCP Server 在运行：
 
-1. Check if port 3000 is listening:
+1. 检查 3000 端口是否监听：
    ```bash
    curl -sI http://localhost:3000/mcp | head -3
    ```
-   401 / 406 are healthy responses — they mean the streamable-http endpoint is up.
+   401 / 406 都是健康响应 —— 说明 streamable-http endpoint 已起。
 
-2. Or try calling an MCP tool directly (after agent config):
+2. 或者（agent 配置完成后）直接调用 MCP 工具：
    ```
    wiki_search("test", limit=1)
    ```
 
-**If server not running**:
-- Ask user: "MCP Server is not running. Is the AscendC-Kernel-Wiki repo available?"
-- Confirm the repo's `<repo_root>/config.yaml` has `search.mode` set (`local` / `openai-api` / `claude-agent`) — v2 reads business config (mode / model / api_key) only from `config.yaml`; CLI no longer accepts `--retriever` and no `EMBEDDING_MODEL` env is honored.
-- Provide startup command:
+**如果 server 没跑**：
+- 问用户："MCP Server 没在运行。AscendC-Kernel-Wiki 仓库可用吗？"
+- 确认该仓库的 `<repo_root>/config.yaml` 配置了 `search.mode`（`local` / `openai-api` / `claude-agent`） —— v2 只从 `config.yaml` 读取业务配置（mode / model / api_key）；CLI 已不再接受 `--retriever`，`EMBEDDING_MODEL` 环境变量也不再生效。
+- 给出启动命令：
   ```bash
-  # In AscendC-Kernel-Wiki repo root (where wiki/ and raw/ exist)
+  # 在 AscendC-Kernel-Wiki 仓根目录（有 wiki/ 和 raw/ 的地方）
   cd mcp-server
   IS_SANDBOX=1 python server.py --port 3000 --host 0.0.0.0
 
-  # Non-root users can omit IS_SANDBOX=1
+  # 非 root 用户可以不带 IS_SANDBOX=1
   ```
-- Wait for user to start server before continuing
+- 等用户启动后再继续
 
-### Step 2: Detect Agent Type
+### Step 2：检测 Agent 类型
 
-Check which agent the user is using:
+确认用户在用哪个 agent：
 
-| Agent | Config file location | Easiest install |
-|-------|---------------------|-----------------|
-| OpenCode | `.opencode/opencode.json` in workspace | Edit JSON (see Step 3) |
-| Claude Code (CLI) | `.mcp.json` in project root | **`claude mcp add` one-liner** (preferred) |
-| Claude Code (Desktop) | `claude_desktop_config.json` in app support | Edit JSON (see Step 3) |
-| Cursor | MCP settings in editor | Editor UI |
+| Agent | 配置文件位置 | 最便捷的安装方式 |
+|-------|--------------|------------------|
+| OpenCode | workspace 下的 `.opencode/opencode.json` | 编辑 JSON（见 Step 3） |
+| Claude Code (CLI) | 项目根下的 `.mcp.json` | **`claude mcp add` 一行命令**（首选） |
+| Claude Code (Desktop) | app support 下的 `claude_desktop_config.json` | 编辑 JSON（见 Step 3） |
+| Cursor | 编辑器内 MCP 设置 | 编辑器 UI |
 
-**Quick detection signals**:
-- `command -v claude` → Claude Code CLI is installed
-- `command -v opencode` → OpenCode CLI is installed
-- File at `.opencode/opencode.json` → OpenCode workspace
-- File at `.mcp.json` → Claude Code project already has MCP config
-- Running inside Claude Code? Check `~/.claude/projects/<pwd-with-slashes-as-dashes>/` exists
+**快速检测信号**：
+- `command -v claude` → 装了 Claude Code CLI
+- `command -v opencode` → 装了 OpenCode CLI
+- `.opencode/opencode.json` 存在 → OpenCode workspace
+- `.mcp.json` 存在 → Claude Code 项目已有 MCP 配置
+- 当前在 Claude Code 里？ 检查 `~/.claude/projects/<把斜杠换成横杠的-pwd>/` 是否存在
 
-Prefer the agent the user is currently invoking the skill from.
+优先选用户当前调用本 skill 所在的 agent。
 
-### Step 3: Present Configuration
+### Step 3：呈现配置
 
-Show user the configuration needed:
+向用户展示所需配置：
 
-**For OpenCode** (`.opencode/opencode.json`):
+**OpenCode**（`.opencode/opencode.json`）：
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
@@ -96,17 +96,17 @@ Show user the configuration needed:
 }
 ```
 
-**For Claude Code CLI** — preferred one-liner (writes `.mcp.json` for you):
+**Claude Code CLI** —— 首选一行命令（自动写 `.mcp.json`）：
 
 ```bash
-# Project scope (commits to repo via .mcp.json)
+# 项目级（通过 .mcp.json 提交进仓）
 claude mcp add --transport http --scope project cann-wiki http://localhost:3000/mcp
 
-# Or user scope (cross-project, lives in user settings)
+# 或用户级（跨项目，存在用户配置里）
 claude mcp add --transport http --scope user cann-wiki http://localhost:3000/mcp
 ```
 
-Equivalent hand-written `.mcp.json` if the user prefers to edit JSON directly:
+也可以手写等价的 `.mcp.json`：
 ```json
 {
   "mcpServers": {
@@ -118,12 +118,12 @@ Equivalent hand-written `.mcp.json` if the user prefers to edit JSON directly:
 }
 ```
 
-After running the command (or saving the file), restart your agent (`/exit`) and verify with:
+执行完命令（或保存文件）后，重启 agent（`/exit`），用以下命令验证：
 ```bash
-claude mcp list           # should show cann-wiki as connected (Claude Code)
+claude mcp list           # 应该看到 cann-wiki 处于 connected 状态（Claude Code）
 ```
 
-**For Claude Desktop** (`claude_desktop_config.json`):
+**Claude Desktop**（`claude_desktop_config.json`）：
 ```json
 {
   "mcpServers": {
@@ -138,30 +138,30 @@ claude mcp list           # should show cann-wiki as connected (Claude Code)
 }
 ```
 
-Notes:
-- v2 takes business config (search mode / model / api key) from `<repo_root>/config.yaml` — **do not** add `--retriever` to args or `EMBEDDING_MODEL` to env; both were removed.
-- `IS_SANDBOX=1` is only needed for root deployments; non-root users can drop it.
+注意：
+- v2 从 `<repo_root>/config.yaml` 读取业务配置（search mode / model / api key） —— **不要**给 args 加 `--retriever`，也不要给 env 加 `EMBEDDING_MODEL`，两者都已移除。
+- `IS_SANDBOX=1` 只在 root 部署时需要；非 root 可以不带。
 
-Explain each option:
-- **Remote mode**: Connect to already-running MCP server (recommended)
-- **Local mode**: Claude Desktop auto-starts MCP server on launch (requires full path to server.py)
+解释每种模式：
+- **Remote 模式**：连接已经在跑的 MCP server（推荐）
+- **Local 模式**：Claude Desktop 启动时自动起 MCP server（需要 server.py 的完整路径）
 
-### Step 4: Confirm and Write
+### Step 4：确认并写入
 
-Ask user:
-- Which agent they're using
-- Which mode (remote/local)
-- MCP Server path if using local mode
+询问用户：
+- 在用哪个 agent
+- 哪种模式（remote / local）
+- 用 local 模式时 MCP Server 的路径
 
-Then write the appropriate config file.
+然后写入对应的配置文件。
 
-### Step 5: Mandatory Restart
+### Step 5：必须重启
 
-**CRITICAL: User MUST restart their agent after config.**
+**关键：配置后用户必须重启 agent。**
 
-Even if `claude mcp list` shows "Connected", MCP tools will NOT work until restart.
+即使 `claude mcp list` 显示 "Connected"，不重启 MCP 工具就是不能用。
 
-Tell user explicitly:
+明确告诉用户：
 ```
 ## ⚠️ 配置完成，必须重启！
 
@@ -181,27 +181,27 @@ Tell user explicitly:
 **请现在执行 `/exit` 重启**。
 ```
 
-**DO NOT** claim setup is complete without restart.
+**不要**在用户没重启前声称 setup 完成。
 
-## Notes
+## 注意事项
 
-- **MCP Server required** — Cannot use wiki skills without running server. This skill assumes the server speaks v2 schema (`results[]` keyed by `id`, no `path`; `wiki_get_page` takes `ids: list[str]`).
-- **Server-side config drives behavior** — Search mode / embedding model / API keys are in `<repo_root>/config.yaml` only; client-side switches are gone in v2.
-- **Config is client-level** — Not stored in skill, stored in agent config
-- **One setup per agent** — Re-run only if switching agents or MCP endpoint changes
-- **Server and client separate** — MCP server runs independently, agent connects to it
+- **MCP Server 必需** —— Server 不跑就用不了 wiki skills。本 skill 假设 server 说 v2 协议（`results[]` 用 `id` 索引，没有 `path`；`wiki_get_page` 收 `ids: list[str]`）。
+- **行为由 server 端配置决定** —— Search mode / embedding model / API key 只在 `<repo_root>/config.yaml` 里；v2 已没有客户端对应开关。
+- **配置是客户端级别的** —— 不存在 skill 里，存在 agent 配置里
+- **每个 agent 配一次** —— 仅在切换 agent 或 MCP endpoint 变化时重跑
+- **Server 与 client 独立** —— MCP server 独立运行，agent 主动连接
 
-## Error Handling
+## 错误处理
 
-| Scenario | Handling |
-|----------|----------|
-| MCP Server not running | Prompt startup command, wait for user |
-| Config file exists | Ask to update or skip |
-| Unknown agent type | Ask user to specify |
-| Config write fails | "Permission denied, check write access" |
+| 场景 | 处理 |
+|------|------|
+| MCP Server 没在跑 | 提示启动命令，等用户操作 |
+| 配置文件已存在 | 询问是更新还是跳过 |
+| 未知 agent 类型 | 询问用户具体类型 |
+| 配置写入失败 | "权限不足，检查写权限" |
 
-## Integration
+## 集成
 
-After setup, these skills will work:
-- **cann-ask** — Knowledge retrieval via MCP
-- **session-upload** — Trajectory upload via MCP
+setup 完成后，下列 skill 可用：
+- **cann-ask** —— 通过 MCP 检索知识
+- **session-upload** —— 通过 MCP 上传轨迹

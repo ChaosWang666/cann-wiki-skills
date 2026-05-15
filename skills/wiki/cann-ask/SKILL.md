@@ -1,93 +1,95 @@
 ---
 name: cann-ask
-description: "CANN Wiki knowledge retrieval (human-facing). MUST use this skill (NOT direct MCP calls) when asking AscendC questions — provides intent classification, auto top-3 fetch, synthesis + inline citations. Trigger: `/cann-ask`."
+description: "CANN Wiki 知识检索（面向人类提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它负责意图分类、自动 fetch top-3、合成答案并附内联引用。触发命令：`/cann-ask`。"
 ---
 
-# CANN Ask Agent
+# CANN 知识问答 Agent
 
-Human-facing knowledge retrieval for AscendC Kernel Wiki via MCP Server. Finds relevant pages, fetches top-3 automatically, and synthesizes a cited answer.
+面向人类提问的 AscendC Kernel Wiki 知识检索，通过 MCP Server 找到相关页面，自动 fetch top-3，并合成带引用的答案。
 
-## Prerequisites
+## 前置条件
 
-**MCP Server must be running** with the following tools available:
+**MCP Server 必须已启动**，提供以下工具：
 
-| Tool | Description |
-|------|-------------|
-| `wiki_search(query, tags?, type?, limit)` | Returns ranked summaries keyed by knowledge `id` (no internal paths exposed). Response: `{results: [{id, summary, tags, score, qValue}], total, warning?}` |
-| `wiki_get_page(ids: list[str])` | **Batch** fetch full page content. Response: `{pages: [{id, frontmatter, content, qValue}], errors: [{id, error}]}` |
-| `wiki_get_index()` | **[DEPRECATED]** — use `wiki_search` + `wiki_get_page` instead |
-| `wiki_submit_trajectory(session_id, content)` | Persist a session transcript Markdown; uploaded path is determined by server `config.yaml` (`trajectory.uploaded_dir`) |
+| 工具 | 说明 |
+|------|------|
+| `wiki_search(query, tags?, type?, limit)` | 返回按知识 `id` 索引的排序摘要（不暴露内部路径）。响应：`{results: [{id, summary, tags, score, qValue}], total, warning?}` |
+| `wiki_get_page(ids: list[str])` | **批量** 获取完整页面内容。响应：`{pages: [{id, frontmatter, content, qValue}], errors: [{id, error}]}` |
+| `wiki_get_index()` | **【已弃用】** —— 改用 `wiki_search` + `wiki_get_page` |
+| `wiki_submit_trajectory(session_id, content)` | 持久化一次 session 轨迹 Markdown；上传路径由 server `config.yaml` 的 `trajectory.uploaded_dir` 决定 |
 
-MCP endpoint: `http://localhost:3000/mcp` (streamable-http transport)
+MCP endpoint: `http://localhost:3000/mcp`（streamable-http 传输）
 
-If MCP Server is not running, prompt user to start it first. To verify server status, try calling `wiki_search("test", limit=1)` or check port 3000.
+如果 MCP Server 未启动，提示用户先启动。要验证状态，可调用 `wiki_search("测试", limit=1)` 或检查 3000 端口。
 
-## Activation (MUST trigger this skill, NOT direct MCP calls)
+## 触发方式（必须走本 skill，不要直接调 MCP）
 
-**CRITICAL**: When MCP tools (`mcp__cann-wiki__wiki_search`, `mcp__cann-wiki__wiki_get_page`) are available, **ALWAYS use the cann-ask skill instead of calling them directly**.
+**重要**：当 MCP 工具（`mcp__cann-wiki__wiki_search`、`mcp__cann-wiki__wiki_get_page`）可用时，**始终通过 cann-ask skill 调用，不要直接调它们**。
 
-**Why skill is required (not direct MCP):**
-- Intent classification → better search query formulation
-- Auto top-3 fetch + synthesis → coherent multi-page answers
-- Inline citation enforcement → traceable knowledge
-- Trajectory logging → Q-Value feedback for retrieval improvement
+**为什么必须走 skill：**
+- 意图分类 → 更好地构造检索 query
+- 自动 fetch top-3 + 合成 → 跨页面连贯回答
+- 强制内联引用 → 知识可追溯
+- 轨迹日志 → 为检索改进提供 Q-Value 反馈
 
-**Direct MCP calls bypass these features → lower-quality answers.**
+**直接调 MCP 会绕过这些能力 → 回答质量更差。**
 
 ---
 
-**Trigger cann-ask when:**
-- User mentions "AscendC" / "Ascend C" in any question
-- User asks about AscendC kernel development, operators, APIs, patterns
-- User requests comparison (e.g., "ElementwiseSch vs manual pipeline")
-- User requests how-to (e.g., "how to implement activation operator")
-- User requests coverage (e.g., "which operators use reduction")
-- User explicitly triggers `/cann-ask` or says "search wiki"
+**触发 cann-ask 的场景：**
+- 用户在任何问题中提到 "AscendC" / "Ascend C"
+- 用户询问 AscendC kernel 开发、算子、API、模式
+- 用户请求对比（如"ElementwiseSch 与手工流水线的差异"）
+- 用户请求 how-to（如"如何实现一个新的激活算子"）
+- 用户请求覆盖范围（如"哪些算子用了 reduction"）
+- 用户显式输入 `/cann-ask` 或说"搜 wiki"
 
-**Anti-pattern (DO NOT do this):**
+**反面模式（不要这么做）：**
 ```
-# Wrong: agent discovers MCP tools via ToolSearch, then calls directly
+# 错误：用户问"卷积怎么实现"，agent 把中文意图翻成英文 query 后直接调 MCP
 ToolSearch("select:mcp__cann-wiki__wiki_search")
-mcp__cann-wiki__wiki_search(query="conv2d", limit=5)  # ❌ bypasses skill
+mcp__cann-wiki__wiki_search(query="conv2d implementation", limit=5)  # ❌ 绕过 skill + 中文转英文导致召回下降
 ```
 
-**Correct pattern:**
+**正确模式：**
 ```
-/cann-ask conv2d implementation  # ✅ triggers skill workflow
+/cann-ask 卷积怎么实现   # ✅ 触发 skill 工作流，query 保持中文
 ```
 
-## Input
+## 输入
 
 $ARGUMENTS
 
-## Workflow
+## 工作流
 
-### Phase A: Intent Classification
+### 阶段 A：意图分类
 
-| Type | Pattern | Example |
-|------|---------|---------|
-| LOOKUP | Single fact lookup | "What is GELU's formula?" |
-| SYNTHESIS | Multi-page synthesis | "What sync mechanisms exist in AscendC?" |
-| COMPARISON | Compare analysis | "ElementwiseSch vs manual implementation?" |
-| HOW-TO | Operation guide | "How to implement a new activation operator?" |
-| COVERAGE | Coverage query | "Which operators use reduction pattern?" |
+| 类型 | 模式 | 示例 |
+|------|------|------|
+| LOOKUP | 单点事实查询 | "GELU 的公式是什么？" |
+| SYNTHESIS | 跨页面合成 | "AscendC 中有哪些同步机制？" |
+| COMPARISON | 对比分析 | "ElementwiseSch 与手工实现的差异？" |
+| HOW-TO | 操作指南 | "如何实现一个新的激活算子？" |
+| COVERAGE | 覆盖范围 | "哪些算子使用了 reduction 模式？" |
 
-### Phase B: MCP Search
+### 阶段 B：MCP 检索
 
-Call MCP `wiki_search`:
+调用 MCP `wiki_search`：
 
 ```
 wiki_search(
-  query: "<user question or keywords>",
-  tags: ["optional tag filter"] | null,
-  type: "optional type filter" | null,
+  query: "<用户问题或关键词，保持原始语言>",
+  tags: ["可选标签过滤"] | null,
+  type: "可选类型过滤" | null,
   limit: 3
 )
 ```
 
-Server-side scoring is decided by the configured retriever mode (local / openai-api / claude-agent — set in server `config.yaml`); clients receive a single pre-blended `score`. **Don't pass `mode`** — it is server-internal.
+> **关键**：`query` 字段应当**保持用户原始语言**（中文用户传中文，英文用户传英文）。Wiki 语料以中文为主，把中文 query 翻成英文会显著降低召回率。除非用户问题里出现了英文专有名词需要保留，否则不要做语言转换。
 
-Response shape (v2 schema):
+服务端打分由配置的 retriever 模式决定（local / openai-api / claude-agent —— 在 server `config.yaml` 中设置）；客户端只会收到一个混合后的 `score`。**不要传 `mode`** —— 这是服务端内部参数。
+
+响应结构（v2 schema）：
 
 ```json
 {
@@ -105,21 +107,21 @@ Response shape (v2 schema):
 }
 ```
 
-Notes:
-- `results[]` carries **no `path`, no `frontmatter`, no `title`** — those are server internals. Title/frontmatter become available only after `wiki_get_page(ids)`.
-- `warning` is optional; present on retriever failure / empty query. **Surface it to the user verbatim** instead of silently retrying or downgrading.
-- `score` is already blended (mode-dependent); sort by it desc and don't re-rank.
+注意：
+- `results[]` 不带 **`path`、`frontmatter`、`title`** —— 这些是服务端内部字段。Title/frontmatter 要调 `wiki_get_page(ids)` 之后才有
+- `warning` 是可选字段；在 retriever 失败 / query 为空时出现。**原样转给用户**，不要静默重试或降级
+- `score` 已经是混合分（依模式而定），降序排序后不要重新排名
 
-### Phase C: Batch Fetch Pages
+### 阶段 C：批量 fetch 页面
 
-Single batch call (do **not** loop per-id):
+单次批量调用（**不要**按 id 循环）：
 
 ```python
 ids = [r["id"] for r in results[:3]]
 wiki_get_page(ids=ids)
 ```
 
-Returns:
+返回：
 
 ```json
 {
@@ -127,7 +129,7 @@ Returns:
     {
       "id": "wiki_static_xxx_md",
       "frontmatter": {...},
-      "content": "Full markdown content (frontmatter section included)",
+      "content": "完整 markdown 内容（含 frontmatter 部分）",
       "qValue": 0.73
     }
   ],
@@ -137,76 +139,76 @@ Returns:
 }
 ```
 
-- `frontmatter` is server-parsed (no need to re-parse).
-- `errors[]` is a soft-failure list — bad ids do not block the rest of `pages[]`. Mention unresolved ids in the answer if they reduce coverage.
+- `frontmatter` 已由服务端解析（无需自行 re-parse）
+- `errors[]` 是软失败列表 —— 个别 id 失败不阻塞 `pages[]` 其余项。若未解析 id 影响了覆盖范围，在答案中提一句
 
-**Strategy**:
-- Default: top-3 ids
-- If results < 3: fetch all available
-- For SYNTHESIS/COMPARISON with ≥3 results: optionally expand to top-5
+**策略**：
+- 默认：top-3 ids
+- 若结果数 < 3：能拿多少拿多少
+- 对 SYNTHESIS / COMPARISON 类型且结果 ≥ 3：可选扩展到 top-5
 
-### Phase D: Synthesize Answer
+### 阶段 D：合成答案
 
-Combine multi-page info into structured answer:
+把多页信息整合成结构化答案：
 
-**Citation rules (MUST follow):**
-1. **Every fact must cite its source inline** — format: `[Source: <id>]` using the knowledge id returned by `wiki_get_page`
-2. Place citation immediately after the fact/section, not at the end
-3. For multi-source facts: `[Source: <id1>, <id2>]`
+**引用规则（必须遵守）：**
+1. **每个事实必须内联引用其来源** —— 格式：`[Source: <id>]`，使用 `wiki_get_page` 返回的知识 id
+2. 引用紧跟在事实 / 小节后面，不放到末尾
+3. 多来源事实：`[Source: <id1>, <id2>]`
 
-**Example (correct):**
+**示例（正确）：**
 ```markdown
-### Alignment Requirements [Source: wiki_static_ascendc_guide_api_vector-compute_md]
+### 对齐要求 [Source: wiki_static_ascendc_guide_api_vector-compute_md]
 
-DataCopy transfer length must be **32-byte aligned**.
+DataCopy 传输长度必须 **32 字节对齐**。
 
-| Requirement | Description |
-| DataCopy length | 32B aligned |
+| 要求 | 说明 |
+| DataCopy 长度 | 32B 对齐 |
 ```
 
-**Example (incorrect):**
+**示例（错误）：**
 ```markdown
-### Alignment Requirements
+### 对齐要求
 
-DataCopy transfer length must be **32-byte aligned**.
+DataCopy 传输长度必须 **32 字节对齐**。
 
 ---
 
-**References:**
+**参考：**
 - wiki_static_ascendc_guide_api_vector-compute_md
 ```
 
-**Content structure:**
-- COMPARISON → comparison table (each row cites its source)
-- HOW-TO → step list + code examples (cite source for each step)
-- Use tables, code blocks, structured format
-- End with References summary listing `<id> — <frontmatter.title>` per page (titles come from `wiki_get_page`, not search)
+**内容结构：**
+- COMPARISON → 对比表（每行附来源）
+- HOW-TO → 步骤列表 + 代码示例（每步附来源）
+- 多用表格、代码块、结构化格式
+- 末尾的 References 列出 `<id> — <frontmatter.title>`（title 来自 `wiki_get_page`，不来自 search）
 
-### Phase E: Trajectory Upload Prompt
+### 阶段 E：提示上传轨迹
 
-At answer end, include a brief footer:
+在答案末尾加一句简短 footer：
 
 ```
-💡 Use `/session-upload` to save this session to Wiki
+💡 用 `/session-upload` 把本次会话上传到 Wiki
 ```
 
-Upload itself is owned by the `session-upload` skill — see its SKILL.md for the full pipeline. The tool signature is:
+上传本身由 `session-upload` skill 负责 —— 完整流程见其 SKILL.md。工具签名：
 
 ```
 wiki_submit_trajectory(
   session_id: "<session id>",
-  content:    "<entire Markdown body of the converted transcript>"
+  content:    "<转换后的完整 Markdown 轨迹>"
 )
 ```
 
-Only two parameters: `session_id` and `content` (no `source` / `transcript` aliases). The server stores the bytes verbatim at `<server config trajectory.uploaded_dir>/{session_id}.md`; downstream sanitization / extraction is handled by the knowledge engine's monitor process, not this tool.
+只有两个参数：`session_id` 和 `content`（没有 `source` / `transcript` 等别名）。服务端把字节原样存到 `<server config trajectory.uploaded_dir>/{session_id}.md`；后续的脱敏 / 抽取由 knowledge engine 的 monitor 进程处理，本工具不管。
 
-## Output Format
+## 输出格式
 
 ```markdown
 ## Answer
 
-[Structured content with [Source: <id>] citations]
+[结构化内容，带 [Source: <id>] 引用]
 
 ---
 
@@ -215,25 +217,26 @@ Only two parameters: `session_id` and `content` (no `source` / `transcript` alia
 - <id2> — ...
 - <id3> — ...
 
-💡 Use `/session-upload` to save this session to Wiki
+💡 用 `/session-upload` 把本次会话上传到 Wiki
 ```
 
-## Notes
+## 注意事项
 
-- **MCP Server required** — Prompt user to start if not running
-- **Cite by id** — Use the knowledge `id` returned by `wiki_get_page`; do not invent paths
-- **Don't fabricate** — If `results[]` is empty or `warning` is set, state clearly; do not guess
-- **Auto top-3 batch** — Single `wiki_get_page(ids=[...])` call, no per-id loop
-- **Q-Value managed by MCP** — No local tracking
-- **No manual file-back** — v2 has removed in-skill wiki page authoring; to feed answers back into the wiki, use `/session-upload` and let `knowledge_engine`'s ingest pipeline handle it
-- **Graceful degradation** — If MCP unreachable, prompt error without blocking local functions
+- **MCP Server 必需** —— 未启动时提示用户启动
+- **query 语言对齐** —— 用户用什么语言提问，传给 `wiki_search` 的 `query` 就用什么语言；不要主动翻译（wiki 语料以中文为主，翻译会降低召回率）
+- **按 id 引用** —— 用 `wiki_get_page` 返回的知识 `id`；不要自行编造路径
+- **不要编造** —— 若 `results[]` 为空或 `warning` 非空，明确告知；不要猜测
+- **自动 top-3 批量** —— 单次 `wiki_get_page(ids=[...])` 调用，不要按 id 循环
+- **Q-Value 由 MCP 管理** —— 本地不追踪
+- **不再手动回写文件** —— v2 已去掉 skill 内的 wiki 页面编辑能力；要把答案回喂到 wiki，用 `/session-upload`，由 `knowledge_engine` 的 ingest 管线处理
+- **优雅降级** —— MCP 不可达时报错，不阻塞本地功能
 
-## Error Handling
+## 错误处理
 
-| Scenario | Handling |
-|----------|----------|
-| MCP Server not running | Prompt startup command |
-| `wiki_search` empty results or response carries `warning` | Surface the warning text to user verbatim; suggest keyword/tag adjustment |
-| `wiki_get_page` partial failures | List unresolved ids from `errors[]`; continue synthesis from `pages[]` |
-| `wiki_submit_trajectory` failed | Surface server `message` payload to user (don't swallow it) |
-| Network timeout | "Timeout, check MCP Server status" |
+| 场景 | 处理 |
+|------|------|
+| MCP Server 未启动 | 提示启动命令 |
+| `wiki_search` 结果为空，或响应携带 `warning` | 把 warning 文本原样转给用户；建议调整关键词 / 标签 |
+| `wiki_get_page` 部分失败 | 列出 `errors[]` 中未解析的 id；用 `pages[]` 继续合成 |
+| `wiki_submit_trajectory` 失败 | 把服务端 `message` 原样转给用户（不要吞掉） |
+| 网络超时 | "超时，检查 MCP Server 状态" |

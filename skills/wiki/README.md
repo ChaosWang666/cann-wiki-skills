@@ -1,10 +1,10 @@
 # Wiki Skills
 
-Skills for AscendC Kernel Wiki knowledge retrieval and session feedback.
+面向 AscendC Kernel Wiki 的知识检索与会话反馈 skills。
 
-| Skill | Purpose |
-|-------|---------|
-| cann-ask | MCP search by knowledge id, batch fetch top-3 contents, synthesize cited answers |
-| session-upload | Upload session transcript (`.md`) into the ingest pipeline |
+| Skill | 用途 |
+|-------|------|
+| cann-ask | 按知识 id 调 MCP 检索，批量 fetch top-3 内容，合成带引用的答案 |
+| session-upload | 把会话轨迹（`.md`）送入 ingest 管线 |
 
-Both target the **v2** MCP Server (`wiki_search` / batch `wiki_get_page(ids)` / `wiki_submit_trajectory`). `wiki_get_index` is deprecated and not relied on by either skill.
+两个 skill 都对接 **v2** MCP Server（`wiki_search` / 批量 `wiki_get_page(ids)` / `wiki_submit_trajectory`）。`wiki_get_index` 已弃用，两个 skill 都不依赖它。
