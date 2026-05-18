@@ -105,7 +105,9 @@ python3 "$SKILL_DIR/scripts/mcp_upload.py" --file /tmp/session_output.md --sessi
 
 成功时输出一行：`OK <uploaded path>`。Server 报错或返回意外响应时，脚本原样打印 server payload 并以非零退出码退出 —— 原样转给用户，不要改写。
 
-脚本从 `$CANN_WIKI_MCP_URL` 读取 MCP URL（默认 `http://localhost:3000/mcp`）；用 `--url` 可以覆盖。
+脚本按以下优先级解析 MCP URL：`--url` 参数 > `$CANN_WIKI_MCP_URL` > agent MCP 配置（向上层目录找 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url`，再退到 `~/.claude.json`）> 默认 `http://localhost:3000/mcp`。
+
+**实际效果**：跑过 `/setup-cann-wiki` 之后，端口选什么这里就用什么，**不需要再手动设环境变量**。
 
 **禁止**：
 - 把 `wiki_submit_trajectory` 当 tool_use 直接调用（如上所述会截断）

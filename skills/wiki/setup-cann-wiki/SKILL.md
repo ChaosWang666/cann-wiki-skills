@@ -190,6 +190,7 @@ claude mcp list           # 应该看到 cann-wiki 处于 connected 状态（Cla
 - **配置是客户端级别的** —— 不存在 skill 里，存在 agent 配置里
 - **每个 agent 配一次** —— 仅在切换 agent 或 MCP endpoint 变化时重跑
 - **Server 与 client 独立** —— MCP server 独立运行，agent 主动连接
+- **端口非 3000 也无需额外设环境变量** —— `session-upload` 的上传脚本会自动从你这里写的 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url` 拾起端口；cann-ask 走 agent 内置 MCP 客户端，本来就跟随这份配置。
 
 ## 错误处理
 

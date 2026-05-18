@@ -11,7 +11,12 @@ Usage:
     python3 mcp_upload.py --file /tmp/session_output.md --session-id <id>
 
 URL resolution order:
-    --url flag  >  $CANN_WIKI_MCP_URL  >  http://localhost:3000/mcp
+    --url flag  >  $CANN_WIKI_MCP_URL  >  agent MCP config (cann-wiki entry's
+    `url` in `.mcp.json` / `.opencode/opencode.json` walking up from cwd, or
+    `~/.claude.json`)  >  http://localhost:3000/mcp
+
+This means setting a non-default port via `/setup-cann-wiki` is enough: the
+agent config that setup wrote is what this script reads when uploading.
 """
 import argparse
 import json
@@ -42,16 +47,62 @@ def _parse_sse(body):
             continue
 
 
+def _scan_config(path):
+    """Return the cann-wiki entry's `url` from one MCP config file, or None."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None
+    # `mcpServers` is the Claude Code / Desktop shape; `mcp` is OpenCode's.
+    for top_key in ("mcpServers", "mcp"):
+        servers = data.get(top_key)
+        if isinstance(servers, dict):
+            entry = servers.get("cann-wiki")
+            if isinstance(entry, dict):
+                url = entry.get("url")
+                if isinstance(url, str) and url:
+                    return url
+    return None
+
+
+def _find_url_in_agent_configs():
+    cur = os.path.abspath(os.getcwd())
+    while True:
+        for rel in (".mcp.json", os.path.join(".opencode", "opencode.json")):
+            url = _scan_config(os.path.join(cur, rel))
+            if url:
+                return url
+        parent = os.path.dirname(cur)
+        if parent == cur:
+            break
+        cur = parent
+    return _scan_config(os.path.expanduser("~/.claude.json"))
+
+
+def _resolve_url(cli_url):
+    if cli_url:
+        return cli_url
+    env_url = os.environ.get("CANN_WIKI_MCP_URL")
+    if env_url:
+        return env_url
+    found = _find_url_in_agent_configs()
+    if found:
+        return found
+    return "http://localhost:3000/mcp"
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--file", required=True, help="Path to rendered Markdown transcript")
     p.add_argument("--session-id", required=True, help="Session id used as <session_id>.md filename")
     p.add_argument(
         "--url",
-        default=os.environ.get("CANN_WIKI_MCP_URL", "http://localhost:3000/mcp"),
-        help="MCP HTTP endpoint (default: http://localhost:3000/mcp)",
+        default=None,
+        help="MCP HTTP endpoint (default: $CANN_WIKI_MCP_URL > agent MCP config > http://localhost:3000/mcp)",
     )
     args = p.parse_args()
+    args.url = _resolve_url(args.url)
 
     with open(args.file, encoding="utf-8") as f:
         content = f.read()
