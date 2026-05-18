@@ -1,6 +1,6 @@
 ---
 name: cann-ask
-description: "CANN Wiki 知识检索（面向人类提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它负责意图分类、自动 fetch top-3、合成答案并附内联引用。触发命令：`/cann-ask`。"
+description: "CANN Wiki 知识检索（面向人类提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它负责 shape 分类 + query plan 拆分 + 并行检索、自动批量 fetch、合成答案并附内联引用。触发命令：`/cann-ask`。"
 ---
 
 # CANN 知识问答 Agent
@@ -27,8 +27,8 @@ MCP endpoint: `http://localhost:3000/mcp`（streamable-http 传输）
 **重要**：当 MCP 工具（`mcp__cann-wiki__wiki_search`、`mcp__cann-wiki__wiki_get_page`）可用时，**始终通过 cann-ask skill 调用，不要直接调它们**。
 
 **为什么必须走 skill：**
-- 意图分类 → 更好地构造检索 query
-- 自动 fetch top-3 + 合成 → 跨页面连贯回答
+- shape 分类 + query plan → 把长问题拆成多条聚焦 sub-query 并行检索，召回率比单条裸 query 高
+- 自动批量 fetch + 合成 → 跨页面连贯回答
 - 强制内联引用 → 知识可追溯
 - 轨迹日志 → 为检索改进提供 Q-Value 反馈
 
@@ -41,7 +41,8 @@ MCP endpoint: `http://localhost:3000/mcp`（streamable-http 传输）
 - 用户询问 AscendC kernel 开发、算子、API、模式
 - 用户请求对比（如"ElementwiseSch 与手工流水线的差异"）
 - 用户请求 how-to（如"如何实现一个新的激活算子"）
-- 用户请求覆盖范围（如"哪些算子用了 reduction"）
+- 用户请求列出 / 枚举（如"哪些算子用了 reduction"、"有哪些同步机制"）
+- 用户请求排错（如"算子精度对不上怎么排查"、"编译报 xxx 错"）
 - 用户显式输入 `/cann-ask` 或说"搜 wiki"
 
 **反面模式（不要这么做）：**
@@ -62,30 +63,58 @@ $ARGUMENTS
 
 ## 工作流
 
-### 阶段 A：意图分类
+### 阶段 A：问题形态分类（shape）
 
-| 类型 | 模式 | 示例 |
+判断用户问的是哪种形态。**形态决定输出版式和 top-N**（具体的检索措辞由阶段 B 的 query plan 决定，跟形态正交）。
+
+| shape | 模式 | 示例 |
 |------|------|------|
-| LOOKUP | 单点事实查询 | "GELU 的公式是什么？" |
-| SYNTHESIS | 跨页面合成 | "AscendC 中有哪些同步机制？" |
+| LOOKUP | 单点事实 | "GELU 的公式是什么？" |
+| LIST | 列出 / 枚举多项 | "AscendC 有哪些同步机制？"、"哪些算子用了 reduction？" |
 | COMPARISON | 对比分析 | "ElementwiseSch 与手工实现的差异？" |
 | HOW-TO | 操作指南 | "如何实现一个新的激活算子？" |
-| COVERAGE | 覆盖范围 | "哪些算子使用了 reduction 模式？" |
+| TROUBLESHOOTING | 排错 / 调试 | "算子精度对不上怎么排查？"、"编译报 xxx 错怎么处理？" |
 
-### 阶段 B：MCP 检索
+### 阶段 B：query 计划 + 并行检索
 
-调用 MCP `wiki_search`：
+把"长问题塞成一条 query"会让 dense embedding 被多主题稀释、命中率下降。本阶段先抽结构化字段，再按 shape 拆 2-4 条聚焦 sub-query 并行检索，最后合并去重。
+
+#### B.1 从用户问题抽取结构化字段
+
+> **关键**：所有 sub-query 都应当**保持用户原始语言**（中文用户传中文，英文用户传英文）。Wiki 语料以中文为主，把中文翻成英文会显著降低召回率。除非用户原文出现英文专有名词需保留，否则不要做语言转换。
+
+抽出三组字段（缺则留空，不要硬编）：
+
+| 字段 | 含义 | 例子 |
+|------|------|------|
+| 核心概念 | 1-3 个实体 / API / 模式名 | `DataCopy`、`ElementwiseSch`、`reduction` |
+| 场景约束 | 硬件 / 版本 / 数据类型 / 调度模式 | `910B`、`float16`、`双缓冲` |
+| 期望信息 | 哪一类内容 | 定义公式 / API 签名 / 实现示例 / 设计原理 / 错误排查 |
+
+#### B.2 构造 sub-query 并并行检索
+
+按 shape 决定 sub-query 数量（**上限 4**，每条只带 1-2 个核心 token，sub-query 之间**关键词互不重复**）：
+
+| shape | sub-query 数 | 拆分策略 |
+|------|------|------|
+| LOOKUP | 1 | 窄事实，单查询足够 |
+| LIST | 2-3 | 不同子主题 / 不同 angle 各一条 |
+| COMPARISON | 2 | 两边各一条 |
+| HOW-TO | 2-3 | 概念、API、实现示例 各一条 |
+| TROUBLESHOOTING | 2-3 | 症状现象、可能原因、排查/工具 各一条 |
+
+**Guardrail**：用户问题 < ~15 字且未给出场景约束 → 强制 1 条 sub-query，不拆。
+
+并行调用 `wiki_search`（同一 tool 多次 invoke，在同一回合发出）：
 
 ```
 wiki_search(
-  query: "<用户问题或关键词，保持原始语言>",
+  query: "<sub-query，保持原始语言>",
   tags: ["可选标签过滤"] | null,
   type: "可选类型过滤" | null,
   limit: 3
 )
 ```
-
-> **关键**：`query` 字段应当**保持用户原始语言**（中文用户传中文，英文用户传英文）。Wiki 语料以中文为主，把中文 query 翻成英文会显著降低召回率。除非用户问题里出现了英文专有名词需要保留，否则不要做语言转换。
 
 服务端打分由配置的 retriever 模式决定（local / openai-api / claude-agent —— 在 server `config.yaml` 中设置）；客户端只会收到一个混合后的 `score`。**不要传 `mode`** —— 这是服务端内部参数。
 
@@ -110,14 +139,23 @@ wiki_search(
 注意：
 - `results[]` 不带 **`path`、`frontmatter`、`title`** —— 这些是服务端内部字段。Title/frontmatter 要调 `wiki_get_page(ids)` 之后才有
 - `warning` 是可选字段；在 retriever 失败 / query 为空时出现。**原样转给用户**，不要静默重试或降级
-- `score` 已经是混合分（依模式而定），降序排序后不要重新排名
+- `score` 已经是混合分（依模式而定），单条结果内降序，不要重新排名
+
+#### B.3 合并各 sub-query 结果
+
+- 按 `id` **去重**
+- 同一 id 在多条 sub-query 中出现时，**取 max(score)** 作为合并分（不取 sum，避免高频通用页面被叠加抬权）
+- 按合并分降序
+- 取 top-N 进入 Phase C：LOOKUP / HOW-TO / TROUBLESHOOTING 取 **top-3**；LIST / COMPARISON 取 **top-5**
+- 任一 sub-query 携带 `warning` 都要透传给用户，不静默忽略
 
 ### 阶段 C：批量 fetch 页面
 
 单次批量调用（**不要**按 id 循环）：
 
 ```python
-ids = [r["id"] for r in results[:3]]
+# top_n 由 B.3 按 shape 决定：LOOKUP/HOW-TO/TROUBLESHOOTING=3，LIST/COMPARISON=5
+ids = [r["id"] for r in merged_results[:top_n]]
 wiki_get_page(ids=ids)
 ```
 
@@ -142,10 +180,10 @@ wiki_get_page(ids=ids)
 - `frontmatter` 已由服务端解析（无需自行 re-parse）
 - `errors[]` 是软失败列表 —— 个别 id 失败不阻塞 `pages[]` 其余项。若未解析 id 影响了覆盖范围，在答案中提一句
 
-**策略**：
-- 默认：top-3 ids
-- 若结果数 < 3：能拿多少拿多少
-- 对 SYNTHESIS / COMPARISON 类型且结果 ≥ 3：可选扩展到 top-5
+**策略**（与 B.3 合并后的 top-N 一致，不再独立判断）：
+- LOOKUP / HOW-TO / TROUBLESHOOTING：top-3
+- LIST / COMPARISON：top-5
+- 若合并后结果数 < 上限：能拿多少拿多少
 
 ### 阶段 D：合成答案
 
@@ -178,9 +216,12 @@ DataCopy 传输长度必须 **32 字节对齐**。
 - wiki_static_ascendc_guide_api_vector-compute_md
 ```
 
-**内容结构：**
+**按 shape 选内容结构：**
+- LOOKUP → 直接给事实 + 引用（一句话即可）
+- LIST → bullet 列表或表格，每项附来源
 - COMPARISON → 对比表（每行附来源）
 - HOW-TO → 步骤列表 + 代码示例（每步附来源）
+- TROUBLESHOOTING → "症状 → 可能原因 → 排查/修复步骤"三段，每条附来源
 - 多用表格、代码块、结构化格式
 - 末尾的 References 列出 `<id> — <frontmatter.title>`（title 来自 `wiki_get_page`，不来自 search）
 
@@ -226,7 +267,7 @@ wiki_submit_trajectory(
 - **query 语言对齐** —— 用户用什么语言提问，传给 `wiki_search` 的 `query` 就用什么语言；不要主动翻译（wiki 语料以中文为主，翻译会降低召回率）
 - **按 id 引用** —— 用 `wiki_get_page` 返回的知识 `id`；不要自行编造路径
 - **不要编造** —— 若 `results[]` 为空或 `warning` 非空，明确告知；不要猜测
-- **自动 top-3 批量** —— 单次 `wiki_get_page(ids=[...])` 调用，不要按 id 循环
+- **批量 fetch** —— 单次 `wiki_get_page(ids=[...])` 调用，top-N 按 shape 决定（3 或 5），不要按 id 循环
 - **Q-Value 由 MCP 管理** —— 本地不追踪
 - **不再手动回写文件** —— v2 已去掉 skill 内的 wiki 页面编辑能力；要把答案回喂到 wiki，用 `/session-upload`，由 `knowledge_engine` 的 ingest 管线处理
 - **优雅降级** —— MCP 不可达时报错，不阻塞本地功能
