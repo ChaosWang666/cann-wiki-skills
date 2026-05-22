@@ -105,23 +105,11 @@ skill 解析后注入 wiki_search 调用（详见阶段 B.2）。
 | 场景约束 | 硬件 / 数据类型 / 调度模式 | `910B`、`float16`、`双缓冲` |
 | 期望信息 | 哪一类内容 | 定义公式 / API 签名 / 实现示例 / 设计原理 / 排错步骤 |
 
-**Step 2 — 用 SCHEMA 词表挑 `tags`**（**必传 2-4 个，只能从下面词表里挑，不允许自由发挥**）：
+**Step 2 — 用 SCHEMA 词表挑 `tags`**（**必传 2-4 个，必须从 SCHEMA 权威词表挑，不允许自由发挥**）：
 
-```
-编程概念   : programming_model memory_hierarchy pipeline tiling kernel_function tensor data_format dag language_extension programming_paradigm tpipe tque
-编程范式   : simd simt regbase vf cpp
-API        : basic_api vector_api scalar_api datacopy_api matmul_api sync_api c_api
-代码模式   : elementwise reduction matmul double_buffer broadcast multi_core manual_kernel interpolation
-算子分类   : activation norm conv pooling attention quant loss optim rnn math conversion random cv foreach index matmul vfusion control hash image objdetect mc2 gmm moe posembedding ffn
-数据类型   : fp16 bf16 fp32 int8 int16 int32 int64 uint8 uint1
-硬件/架构  : hardware arch_base arch20x arch22x arch30x arch35 ai_cpu atlas_350 ascend950 a3 atlas_a2 atlas_a3
-工具链     : msopgen bisheng msprof msobjdump cmake build runtime rtc opc
-调试调优   : debug performance tooling
-教程/参考  : getting_started howto faq troubleshooting glossary reference
-框架       : atvoss catlass framework_adaption pytorch onnx tensorflow
-工程化     : engineering ge_graph graph_compile kernel_direct
-页面类型标记: api_reference practice concept toolchain   ← 想限定页面类型时混进 tags
-```
+权威词表在 wiki 仓的 `wiki/SCHEMA.md` 第 7 节"标签体系"。**本轮第一次调本 skill 时**先 `Read` 该文件拿现场词表（路径示例：`AscendC-Kernel-Wiki/wiki/SCHEMA.md`；位置不确定就 `Glob "**/wiki/SCHEMA.md"`），后续同一会话内可直接用上次记住的词表。13 个类目作为助记：
+
+> 编程概念 ｜ 编程范式 ｜ API ｜ 代码模式 ｜ 算子分类 ｜ 数据类型 ｜ 硬件/架构 ｜ 工具链 ｜ 调试调优 ｜ 教程/参考 ｜ 框架 ｜ 工程化 ｜ 页面类型标记(`api_reference`/`practice`/`concept`/`toolchain`，想限定页面类型时混进 `tags`)
 
 **Step 3 — 实体 → tags 映射示例**（show, don't tell）：
 
