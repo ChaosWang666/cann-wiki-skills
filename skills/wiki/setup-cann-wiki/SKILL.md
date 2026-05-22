@@ -24,9 +24,8 @@ setup 之前，检查：
    - 缺失就创建
 
 3. **MCP 工具可用吗？**
-   - 必需的 v2 工具：`wiki_search`、`wiki_get_page`（按 `ids` 批量）、`wiki_submit_trajectory`
-   - `wiki_get_index` 还在但已 **【弃用】** —— 不要依赖它做健康检查或页面导航
-   - 配置完成后，确认这些工具出现在 agent 的 MCP 工具列表里
+   - 必需的工具：`wiki_search`、`wiki_get_page`（按 `ids` 批量）、`wiki_help`、`wiki_submit_trajectory`
+   - 配置完成后，确认这四个工具出现在 agent 的 MCP 工具列表里
 
 ## 流程
 
@@ -40,14 +39,21 @@ setup 之前，检查：
    ```
    401 / 406 都是健康响应 —— 说明 streamable-http endpoint 已起。
 
-2. 或者（agent 配置完成后）直接调用 MCP 工具：
+2. **拉一次 server 自描述**（HTTP，无需 MCP 配置就能跑）：
+   ```bash
+   curl -s http://localhost:3000/help | head -40
    ```
-   wiki_search("test", limit=1)
+   返回 markdown 说明（默认）；`curl -s 'http://localhost:3000/help?format=json'` 拿结构化 JSON。把工具列表 echo 给用户看一眼，确认包含 `wiki_search` / `wiki_get_page` / `wiki_help` / `wiki_submit_trajectory`。对不上就先停下，提示用户检查 server。
+
+3. 或者（agent 配置完成后）直接调用 MCP 工具：
+   ```
+   wiki_search("test", limit=1)         # 探活：成功即返三分区响应
+   wiki_help()                          # 拉 server 自描述的结构化版
    ```
 
 **如果 server 没跑**：
 - 问用户："MCP Server 没在运行。AscendC-Kernel-Wiki 仓库可用吗？"
-- 确认该仓库的 `<repo_root>/config.yaml` 配置了 `search.mode`（`local` / `openai-api` / `claude-agent`） —— v2 只从 `config.yaml` 读取业务配置（mode / model / api_key）；CLI 已不再接受 `--retriever`，`EMBEDDING_MODEL` 环境变量也不再生效。
+- 确认该仓库的 `<repo_root>/config.yaml` 配置了 `search.mode`（`local` / `openai-api` / `claude-agent`）；业务配置（mode / model / api_key）只从 `config.yaml` 读取，不走 CLI 参数或环境变量。
 - 给出启动命令：
   ```bash
   # 在 AscendC-Kernel-Wiki 仓根目录（有 wiki/ 和 raw/ 的地方）
@@ -139,7 +145,7 @@ claude mcp list           # 应该看到 cann-wiki 处于 connected 状态（Cla
 ```
 
 注意：
-- v2 从 `<repo_root>/config.yaml` 读取业务配置（search mode / model / api key） —— **不要**给 args 加 `--retriever`，也不要给 env 加 `EMBEDDING_MODEL`，两者都已移除。
+- 业务配置（search mode / model / api key）只从 `<repo_root>/config.yaml` 读取，不要给 args 加 `--retriever` 也不要给 env 加 `EMBEDDING_MODEL`。
 - `IS_SANDBOX=1` 只在 root 部署时需要；非 root 可以不带。
 
 解释每种模式：
@@ -185,8 +191,8 @@ claude mcp list           # 应该看到 cann-wiki 处于 connected 状态（Cla
 
 ## 注意事项
 
-- **MCP Server 必需** —— Server 不跑就用不了 wiki skills。本 skill 假设 server 说 v2 协议（`results[]` 用 `id` 索引，没有 `path`；`wiki_get_page` 收 `ids: list[str]`）。
-- **行为由 server 端配置决定** —— Search mode / embedding model / API key 只在 `<repo_root>/config.yaml` 里；v2 已没有客户端对应开关。
+- **MCP Server 必需** —— Server 不跑就用不了 wiki skills。本 skill 仅做存活探测 + 工具集核对，响应细节由 `cann-ask` 处理。
+- **行为由 server 端配置决定** —— Search mode / embedding model / API key 只在 `<repo_root>/config.yaml` 里，没有客户端开关。
 - **配置是客户端级别的** —— 不存在 skill 里，存在 agent 配置里
 - **每个 agent 配一次** —— 仅在切换 agent 或 MCP endpoint 变化时重跑
 - **Server 与 client 独立** —— MCP server 独立运行，agent 主动连接
