@@ -1,6 +1,6 @@
 ---
 name: cann-ask
-description: "CANN Wiki 知识检索（面向人类提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它负责 shape 分类 + query plan 拆分 + 并行检索、自动批量 fetch、合成答案并附内联引用。触发命令：`/cann-ask`。"
+description: "CANN Wiki 知识检索（面向人类提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它负责 shape 分类 + 按 SCHEMA 词表锚定 tags + query plan 拆分 + 并行检索、自动批量 fetch、合成答案并附内联引用。触发命令：`/cann-ask`。"
 ---
 
 # CANN 知识问答 Agent
@@ -87,31 +87,66 @@ skill 解析后注入 wiki_search 调用（详见阶段 B.2）。
 | HOW-TO | 操作指南 | "如何实现一个新的激活算子？" |
 | TROUBLESHOOTING | 排错 / 调试 | "算子精度对不上怎么排查？"、"编译报 xxx 错怎么处理？" |
 
-### 阶段 B：query 计划 + 并行检索
+### 阶段 B：锚定 SCHEMA + 并行检索
 
-把"长问题塞成一条 query"会让 dense embedding 被多主题稀释、命中率下降。本阶段先抽结构化字段 + 决定 `phase`，再按 shape 拆 2-4 条聚焦 sub-query 并行检索，最后按 tier 分别合并去重。
+**核心约束：wiki_search 是 schema-driven 检索，不是 free-text 关键词搜索。** 不要把用户问题整段塞进 `query`——wiki 文档侧索引只有 几十到 100 字符的精炼摘要，长 query 会让 TFIDF 的低 IDF 词稀释具体技术词、让 embedding 的多主题向量偏离单主题页面。
 
-#### B.1 从用户问题抽取结构化字段 + 决定 phase
+正确流程：**先按 `wiki/SCHEMA.md` 的标签词表挑 `tags`**（决定候选池范围）→ 决定 `phase`（决定 tier0 规则 + 排序倾向）→ 用极短稀有标识符做 `query`（决定召回排序）→ 并发 2-4 路 sub-query → 按 tier 分别合并。
 
-> **关键**：所有 sub-query 都应当**保持用户原始语言**（中文用户传中文，英文用户传英文）。Wiki 语料以中文为主，把中文翻成英文会显著降低召回率。除非用户原文出现英文专有名词需保留，否则不要做语言转换。
+#### B.1 锚定 SCHEMA（挑 tags + 决定 phase）
 
-抽出三组字段（缺则留空，不要硬编）：
+> **关键**：所有 sub-query 都应当**保持用户原始语言**（中文用户传中文，英文用户传英文）。Wiki 语料以中文为主，翻译会显著降召回。
+
+**Step 1 — 抽实体**（1-3 个，缺则留空，不要硬编）：
 
 | 字段 | 含义 | 例子 |
 |------|------|------|
-| 核心概念 | 1-3 个实体 / API / 模式名 | `DataCopy`、`ElementwiseSch`、`reduction` |
-| 场景约束 | 硬件 / 版本 / 数据类型 / 调度模式 | `910B`、`float16`、`双缓冲` |
-| 期望信息 | 哪一类内容 | 定义公式 / API 签名 / 实现示例 / 设计原理 / 错误排查 |
+| 核心概念 | API / 算子 / 模式 / 工具名 | `DataCopy`、`ElementwiseSch`、`reduction`、`msprof` |
+| 场景约束 | 硬件 / 数据类型 / 调度模式 | `910B`、`float16`、`双缓冲` |
+| 期望信息 | 哪一类内容 | 定义公式 / API 签名 / 实现示例 / 设计原理 / 排错步骤 |
 
-**关键词软触发 `phase`**（决定 tier0 返哪篇踩坑规则 + 偏置 tier1 排序）：
+**Step 2 — 用 SCHEMA 词表挑 `tags`**（**必传 2-4 个，只能从下面词表里挑，不允许自由发挥**）：
+
+```
+编程概念   : programming_model memory_hierarchy pipeline tiling kernel_function tensor data_format dag language_extension programming_paradigm tpipe tque
+编程范式   : simd simt regbase vf cpp
+API        : basic_api vector_api scalar_api datacopy_api matmul_api sync_api c_api
+代码模式   : elementwise reduction matmul double_buffer broadcast multi_core manual_kernel interpolation
+算子分类   : activation norm conv pooling attention quant loss optim rnn math conversion random cv foreach index matmul vfusion control hash image objdetect mc2 gmm moe posembedding ffn
+数据类型   : fp16 bf16 fp32 int8 int16 int32 int64 uint8 uint1
+硬件/架构  : hardware arch_base arch20x arch22x arch30x arch35 ai_cpu atlas_350 ascend950 a3 atlas_a2 atlas_a3
+工具链     : msopgen bisheng msprof msobjdump cmake build runtime rtc opc
+调试调优   : debug performance tooling
+教程/参考  : getting_started howto faq troubleshooting glossary reference
+框架       : atvoss catlass framework_adaption pytorch onnx tensorflow
+工程化     : engineering ge_graph graph_compile kernel_direct
+页面类型标记: api_reference practice concept toolchain   ← 想限定页面类型时混进 tags
+```
+
+**Step 3 — 实体 → tags 映射示例**（show, don't tell）：
+
+| 用户问 | tags（只从词表挑） | phase |
+|---|---|---|
+| "gemm_add_relu 怎么写" | `matmul`,`elementwise`,`fp16` | correctness |
+| "DataCopy 32 字节对齐" | `datacopy_api`,`memory_hierarchy` | correctness |
+| "msprof 怎么看 cube 利用率" | `msprof`,`performance`,`tooling` | performance |
+| "relu fp16 实现" | `activation`,`fp16`,`simd` | correctness |
+| "精度对不上怎么排查" | `troubleshooting`,`debug` | precision |
+| "ElementwiseSch 双缓冲" | `elementwise`,`double_buffer`,`tiling` | correctness |
+| "Matmul API 签名" | `matmul_api`,`api_reference` | correctness |
+| "msopgen 怎么生成算子工程" | `msopgen`,`getting_started` | correctness |
+
+**Step 4 — `phase` 软触发**（决定 tier0 返哪篇规则 + 偏置 tier1 排序）：
 
 | 关键词命中（在原始 query 文本里扫） | `phase` 取值 |
 |---|---|
 | 含 "性能"/"优化"/"耗时"/"慢"/"卡顿"/"带宽"/"吞吐" | `performance` |
 | 含 "精度"/"数值"/"对不上"/"误差"/"NaN"/"溢出" | `precision` |
-| 上两类都没命中（**默认**） | `correctness`（也可省略不传，server 端 None ≡ correctness）|
+| 上两类都没命中（**默认**） | `correctness`（可省略不传，server 端 None ≡ correctness）|
 
 **禁止**传 `phase=all`——会让 tier0 一次返三篇正文，token 爆炸。
+
+> ⚠️ **`type` MCP 参数当前不要用**：server 端把 `type` 映射到 `entry.domain`（全库都是 `ascendc`），实际是 domain 硬过滤，不是页面类型过滤。要过滤页面类型，请混用 `tags` 里"页面类型标记"那一栏（`api_reference`/`practice`/`concept`/`toolchain`），或靠 ID 前缀（`{type}:{slug}`）后置过滤。
 
 #### B.2 构造 sub-query 并并行检索
 
@@ -131,15 +166,15 @@ skill 解析后注入 wiki_search 调用（详见阶段 B.2）。
 
 ```
 wiki_search(
-  query:            "<sub-query，保持原始语言>",
-  phase:            "correctness" | "precision" | "performance",   # B.1 软触发；省略=correctness
-  tags:             ["可选标签过滤"] | null,
-  type:             "可选类型过滤" | null,
+  query:            "<极短稀有标识符，1-3 token，保持原始语言>",   # 算子名/API名/错误码这种具体词，不要塞整段任务描述
+  phase:            "correctness" | "precision" | "performance",   # B.1 Step 4 软触发；省略=correctness
+  tags:             ["从 SCHEMA 词表挑，2-4 个"],                   # 必传，B.1 Step 2/3
+  type:             null,                                          # 不要传，见 B.1 末尾警告
   limit:            3,
-  task_description: "<本次任务全文/目标，必传>",        # 注入 tier2 Agent 上下文
-  call_count:       <int>,                              # 见下文"多轮调用约定"
-  seen_ids:         [...] | null,                       # 见下文
-  device_feedback:  "<上一轮上板报错文本>" | null        # 第一轮可空；第二轮起必传
+  task_description: "<本次任务全文/目标，必传>",                    # 注入 tier2 Agent 上下文
+  call_count:       <int>,                                         # 见下文"多轮调用约定"
+  seen_ids:         [...] | null,                                  # 见下文
+  device_feedback:  "<上一轮上板报错文本>" | null                   # 第一轮可空；第二轮起必传
 )
 ```
 
@@ -147,11 +182,12 @@ wiki_search(
 
 | 参数 | 取值来源 | 必填 | 备注 |
 |---|---|---|---|
-| `query` | B.2 拆出的 sub-query | ✓ | |
-| `phase` | B.1 关键词软触发 | 可省略 | 4 条 sub-query 用同一 phase；省略=correctness；**禁止** `phase=all`(token 爆炸) |
-| `tags` / `type` | 用户给的硬过滤 | 否 | 一般不传 |
+| `query` | B.2 拆出的 sub-query | ✓ | **极短**——只放 1-3 个稀有标识符（算子名/API名/错误码/模式名），不塞整段问题；长 query 在 TFIDF/embedding 两路都会被低 IDF 词稀释 |
+| `phase` | B.1 Step 4 软触发 | 可省略 | 4 条 sub-query 用同一 phase；省略=correctness；**禁止** `phase=all`(token 爆炸) |
+| `tags` | B.1 Step 2/3 从 SCHEMA 词表挑 | **✓ 必传** | 2-4 个；**只能从 §B.1 Step 2 词表挑**，不允许自由发挥；server 端是硬过滤（任一 tag 命中即保留） |
+| `type` | 不传 | 否 | 当前 server 端 `type→domain`(全库 `ascendc`)，不是页面类型过滤；要过滤页面类型走 `tags` 的"页面类型标记"那一栏 |
 | `limit` | 由 shape 决定 | 否 | 默认 3 |
-| `task_description` | 用户原始问题（或调用方传入的任务描述） | **✓ 必传** | 4 条 sub-query 共享同一份；用来让 tier2 Agent 理解整体任务 |
+| `task_description` | 用户原始问题（或调用方传入的任务描述） | **✓ 必传** | 4 条 sub-query 共享同一份；让 tier2 Agent 理解整体任务（**这里**塞富上下文，不在 query 里塞） |
 | `call_count` | 调用方维护的轮次计数器 | 否 | 见下文 |
 | `seen_ids` | 上一轮已召回的 id 累计 | 否 | 见下文 |
 | `device_feedback` | 上一轮上板测试报错文本（compile / precision / runtime error） | **第一轮可空；第二轮起必传** | 让 tier2 Agent 优先召回能解决该问题的 recipe |
@@ -292,6 +328,9 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 
 ## 注意事项
 
+- **schema-driven 而非 keyword-driven** —— 检索成败的关键是 §B.1 选对 `tags`（候选池范围）+ `query` 用极短稀有标识符（召回排序信号）。把用户问题整段塞 `query` 会让 TFIDF/embedding 都被稀释；富上下文（task / device_feedback）走 `task_description` 给 tier2 Agent，不要混进 `query`。
+- **`tags` 必传** —— 2-4 个，只从 §B.1 Step 2 的 SCHEMA 词表里挑，不允许自由发挥；server 端是硬过滤。
+- **`type` 不要用** —— server 端是 `domain` 过滤不是页面类型过滤；要过滤页面类型走 `tags` 的"页面类型标记"。
 - **三分区响应** —— `wiki_search` 顶层是 `{phase_rule, static, dynamic, warning?}`，阶段 D 分别渲染，不要合并成一个列表。
 - **phase / task_description 全 sub-query 共享** —— 4 条 sub-query 用同一组值；`task_description` **必传**。
 - **多轮状态由调用方维护** —— `call_count` / `seen_ids` / `device_feedback` 是调用方传进来的（人类单次问答都为空 / null；agent loop 调用方自己累积）。`device_feedback` 第一轮可空，第二轮起必传。
