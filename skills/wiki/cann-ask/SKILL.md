@@ -114,7 +114,7 @@ wiki_search(
   query:            "<B.1 合成的自然语言提问，30-150 字>",
   phase:            "correctness" | "precision" | "performance",   # B.2 派生
   tags:             [],                                            # 显式空数组，server 走全量召回；当前不启用 tag 过滤
-  type:             null,                                          # 不要传，见末尾警告
+  type:             null,                                          # 不要传 — server 端 type→domain (全库 ascendc), 是 domain 硬过滤不是页面类型过滤
   limit:            3,
   task_description: "<caller 缓存的 round-1 原文，跨轮 verbatim>",
   call_count:       <int>,                                         # caller 传入的 CALL_COUNT；单次人类问答 = 0
