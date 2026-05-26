@@ -11,7 +11,7 @@ description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 A
 
 **MCP Server 必须已启动**，endpoint: `http://localhost:3000/mcp`（streamable-http 传输）。验证可调 `wiki_search("测试", limit=1)` 或检查 3000 端口。如果未启动，提示用户先启动。
 
-四个 MCP 工具 + 一个已弃用工具的详细契约见下方 §"MCP 工具契约详解"。
+四个 MCP 工具的详细契约见下方 §"MCP 工具契约详解"。
 
 ## MCP 工具契约详解
 
@@ -197,10 +197,6 @@ tier2 dynamic recipe Agent **仅在以下条件 spawn**：
 | 入参 `session_id` | str | 会话标识 |
 | 入参 `content` | str | 轨迹 markdown 全文 |
 | 返回 | dict | `{saved: true, path: "<server config 的 uploaded_dir>"}` |
-
-### `wiki_get_index` —— 已弃用
-
-**`wiki_get_index() -> dict`** 已弃用，将于后续版本移除。**本 skill 不使用** —— 要查导航直接用 `wiki_search`。调用会触发 server 端 deprecation 告警日志。
 
 ---
 
@@ -500,6 +496,5 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 | `static.degraded == true` 或 `dynamic.degraded == true` | 渲染对应 `> ⚠️ ... Agent 失败/超时...` 告警；results 不删 |
 | `wiki_get_page` 部分失败 | 列出 `errors[]` 中未解析的 id；用 `pages[]` 继续合成 |
 | `phase_rule.content_mode == "suppressed"` | graceful 跳过顶部 `## ⚠️ 强制规则` section；JSON 附末仍保留 |
-| `wiki_get_index` 被错误调用 | 切回 `wiki_search`；server 会打 deprecation 告警日志 |
 | `wiki_submit_trajectory` 失败 | 不在本 skill 处理，走 `session-upload` skill |
 | 网络超时 | "超时，检查 MCP Server 状态" |
