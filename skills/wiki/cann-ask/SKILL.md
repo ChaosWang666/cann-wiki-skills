@@ -1,6 +1,6 @@
 ---
 name: cann-ask
-description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它把任务总目标（task_description，跨轮不变）+ 上轮设备反馈（device_feedback）合成聚焦的自然语言 query、自动派生 phase、单次调用 wiki_search，并按新契约渲染 phase_rule（硬约束规则强制抬到最顶）+ ai_suggestion（server 端 LLM 检索建议）+ tier1/tier2 page bodies（合成带引用的答案）。触发命令：`/cann-ask`。"
+description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它把任务总目标（task_description，跨轮不变）+ 上轮设备反馈（device_feedback）合成聚焦的自然语言 query、自动派生 phase、单次调用 wiki_search（v5.2 主 Agent 契约），并按新契约渲染 phase_rule（硬约束规则强制抬到最顶）+ 顶层 ai_suggestion（主 Agent 跨 tier 综述，按 agent_status 标注 ok/degraded/disabled）+ tier1/tier2 page bodies（合成带引用的答案）。触发命令：`/cann-ask`。"
 ---
 
 # CANN 知识问答 Agent
@@ -9,7 +9,7 @@ description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 A
 
 ## 前置条件
 
-**MCP Server 必须已启动**，endpoint: `http://localhost:3000/mcp`（streamable-http 传输）。验证可调 `wiki_search("测试", limit=1)` 或检查 3000 端口。如果未启动，提示用户先启动。
+**MCP Server 必须已启动**，endpoint: `http://localhost:3000/mcp`（streamable-http 传输；由 `/setup-cann-wiki` 配置，地址不一致时先跑该 skill）。验证可调 `wiki_search("测试", limit=1)` 或检查 3000 端口。如果未启动，提示用户先启动。
 
 四个 MCP 工具的详细契约见下方 §"MCP 工具契约详解"。
 
@@ -25,12 +25,12 @@ description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 A
 wiki_search(
   query, phase=None, tags=None, type=None, limit=10,
   intent=None, progress=None, task_description=None,
-  call_count=0, seen_ids=None, device_feedback=None,
-  include_dynamic=False
+  call_count=0, seen_ids=None, device_feedback=None
 ) -> dict
 ```
 
-**作用**：一次调用同时返回三层知识：tier0 `phase_rule`（踩坑规则，强制注入）+ tier1 `static`（静态事实，传统漏斗）+ tier2 `dynamic`（实践 recipe，单次 Agent）。tier0/tier1 零 LLM；仅 tier2 调一次 claude（按门控）。
+
+**作用**：一次调用同时返回三层知识：tier0 `phase_rule`（踩坑规则，强制注入）+ tier1 `static`（静态事实，传统漏斗）+ tier2 `dynamic`（实践 recipe，单次 Agent）。
 
 #### 入参字段
 
@@ -46,29 +46,42 @@ wiki_search(
 | `task_description` | str\|None | 否 | 任务描述，**同时传给 tier1 与 tier2 Agent** 做相关性判断（越具体越能过滤无关结果） | caller 缓存的 round-1 原文（跨轮 verbatim） |
 | `call_count` | int | 否 | 当前阶段已调用知识库的次数；**仅 `call_count==0` 时返回 tier0 rules 正文**，>0 时 `phase_rule.content_mode="suppressed"` 且 `content=""` | caller 维护的轮次计数器（0 起步） |
 | `seen_ids` | list[str]\|None | 否 | 前几轮已召回的知识 ID；本轮 tier1+tier2 候选都剔除，避免重复召回 | caller 累积的 id 列表 |
-| `device_feedback` | str\|None | 否 | 前几轮生成代码的上板报错文本（compile/precision/runtime error），注入 tier2 Agent 上下文 | caller 已截断的原文（50-200 字关键段） |
-| `include_dynamic` | bool | 否 | 强制触发 tier2 dynamic recipe Agent（绕过 phase/device_feedback 门控）；**默认 False** | 不传（信任自动门控） |
+| `device_feedback` | str\|None | 否 | 前几轮生成代码的上板报错文本（compile/precision/runtime error），注入主 Agent 上下文 | caller 已截断的原文（50-200 字关键段） |
 
-#### 自动门控（`include_dynamic=False` 时）
-
-tier2 dynamic recipe Agent **仅在以下条件 spawn**：
-- `phase ∈ {precision, performance, all}`，**或**
-- `device_feedback` 非空
-
-因此 **round 1（phase=correctness，无 device_feedback）→ tier2 不 spawn，`dynamic.results` 返回空数组**。round N 有 device_feedback → tier2 自动 spawn，dynamic 区填充 recipe。这是 cann-ask 期望的行为（round 1 不付 20-90s 的 Agent 延迟代价）。
 
 #### 返回结构
 
-**顶层信封**：
+**顶层信封**（v5.2 — 主 Agent 编排,顶层 4 个诊断字段）：
 
 ```json
 {
-  "phase_rule": { ... tier0 字段见下 ... },
-  "static":     { ... tier1 同构信封字段见下 ... },
-  "dynamic":    { ... tier2 同构信封字段见下 ... },
-  "warning"?: "可选：跨层告警汇总"
+  "phase_rule": {
+    "phase":             "correctness | precision | performance | all",
+    "content_mode":      "inject | suppressed",       // call_count==0 → inject; >0 → suppressed
+    "content":           "str",                        // 规则正文 markdown(suppressed 时为 "")
+    "description":       "str",                        // ★ 强制约束告警语 —— cann-ask 把它抬到答案最顶
+    "estimated_tokens":  "int",
+    "rule_refs":         "list[{phase, version, full_page_id}]"
+  },
+  "ai_suggestion": "str | null",                       // 主 Agent 跨 tier 综述,内嵌 [id:xxx] 引用
+  "agent_status":  "\"ok\" | \"degraded\" | \"disabled\"",
+  "agent_turns":   "int | null",                       // 主 Agent 跑了几轮 retrieve(static)
+  "sub_queries":   "list[str] | null",                 // 主 Agent 设计的所有 sub-query
+  "static":  { "results": [...], "total": "int", "no_useful_results": "bool", "warning": "str | null" },
+  "dynamic": { "results": [...], "total": "int", "no_useful_results": "bool", "warning": "str | null" },
+  "warning":  "str (可选)  // 顶层跨层告警汇总,无告警时不出现"
 }
 ```
+
+
+**顶层诊断字段语义**（来自 `mcp-server/response_schema.py:25-28`,authoritative）：
+
+| 字段 | 含义 |
+|---|---|
+| `ai_suggestion` | 主 Agent 跨 tier 合成的检索建议;**单一来源**,不再分 tier1/tier2;内嵌 `[id:xxx]` 引用可指 tier1 或 tier2 ID |
+| `agent_status` | `"ok"` = 主 Agent 跑通,综述与两 tier results 都可信;`"degraded"` = 主 Agent 失败/超时,results 来自纯漏斗兜底;`"disabled"` = 本次未走 Agent（cfg 关闭 / query 为空 / phase_err / invalid intent） |
+| `agent_turns` | 主 Agent 调 `retrieve(static)` 工具的轮数（`disabled` 时通常为 `None`） |
+| `sub_queries` | 主 Agent 设计的所有 sub-query 列表(透明化检索路径,debug 用) |
 
 **`phase_rule`（tier0 踩坑规则）字段**：
 
@@ -80,19 +93,16 @@ tier2 dynamic recipe Agent **仅在以下条件 spawn**：
 | `description` | str | **强制约束告警语**，告诉下游模型这些规则必须严格遵守。**cann-ask 的核心职责是把它抬到答案最顶 `## ⚠️ 强制规则` section** |
 | `estimated_tokens` | int | 规则正文 token 估计（`suppressed` 时 `0`） |
 | `rule_refs` | list[{phase, version, full_page_id}] | 规则的完整页 ID 列表（可用 `wiki_get_page` 取全文） |
-| `base` | str (可选) | 兜底规则集名（如 `"correctness_minimal"`） |
 
-**`static`（tier1）/ `dynamic`（tier2）同构信封字段**：
+**`static`（tier1）/ `dynamic`（tier2）同构信封字段**（v5.2 简化 —— ai_suggestion / Agent 状态已抬到顶层）：
 
 | 字段 | 类型 | 含义 |
 |---|---|---|
 | `results` | list[dict] | 检索结果项数组（详见下方 results 字段） |
 | `total` | int | 召回总数（可能 > `len(results)`，仅返回 top-`limit`） |
-| `ai_suggestion` | str \| None | **server 端 LLM 合成的整体检索建议**，内嵌 `[id:<完整ID>]` 引用（例 `[id:api_reference:matmul-api]`）；`agent_filtered=true` 时通常非空。**cann-ask 在该 tier section 顶部渲染** |
-| `no_useful_results` | bool | LLM 判定本区无可用结果（true 时建议提示用户重述 query） |
-| `agent_filtered` | bool | `true` = 经过 LLM 相关性筛选；`false` = Q-sort/recall 原序兜底（gating idle 或 Agent 失败） |
-| `degraded` | bool | `true` = Agent 失败/超时，`results` 来自兜底序 |
+| `no_useful_results` | bool | 主 Agent 判定本区无可用结果（true 时建议提示用户重述 query / 补充 device_feedback） |
 | `warning` | str \| None | 本区告警（原样透传，不重试） |
+
 
 **`static.results[i]` 字段**：
 
@@ -116,6 +126,7 @@ tier2 dynamic recipe Agent **仅在以下条件 spawn**：
 | `cautions` | list[str] | 注意事项（可能为空） |
 | `score` | float | 相关性 |
 | `tags` | list[str] | 页面标签 |
+| `branch` | str | 固定 `"dynamic"`（tier2 漏斗标识；与 tier1 的 `"traditional"` 对应） |
 | `citations` | list[str] | 引用的其他知识 ID |
 | `community_id` | str \| None | 社区聚类 ID（图谱探索用，cann-ask 单轮不展开） |
 | `neighbors_top3` | list[str] | top-3 邻居 ID（cann-ask 单轮不展开） |
@@ -174,6 +185,10 @@ tier2 dynamic recipe Agent **仅在以下条件 spawn**：
 | `pages[i].source` | str (可选) | 来源标识（debug 用） |
 | `errors[i]` | dict | 软失败列表；个别 id 失败不阻塞 `pages[]` 其余项；若未解析 id 影响覆盖范围，在答案中提一句 |
 
+### `wiki_get_index` —— [已弃用]
+
+server 已弃用,不要调用,改用 `wiki_search + wiki_get_page`。响应携带 `{deprecated: true}` 字段。
+
 ### `wiki_help` —— 拿当前 server 契约（自描述）
 
 **签名**：`wiki_help() -> dict`
@@ -207,7 +222,7 @@ tier2 dynamic recipe Agent **仅在以下条件 spawn**：
 **为什么必须走 skill：**
 - **task_description / device_feedback / phase 一体化** —— skill 负责跨轮稳定 `task_description`、把 `device_feedback` 揉进自然语言 query、并按 feedback 内容自动派生 `phase`
 - **rule 字段强制渲染** —— `wiki_search` 返回的 `phase_rule.description` 是当前 phase 的硬约束告警语；skill 把它抬到答案最顶 `## ⚠️ 强制规则` section，并把完整 JSON 原样附在答案最末
-- **ai_suggestion 优先抬升** —— `static.ai_suggestion` / `dynamic.ai_suggestion` 是 server 端 LLM 已经合成的整体检索建议；skill 在每个 tier section 顶部以 `> 💡 Server 检索建议` 块引用形式渲染
+- **顶层 ai_suggestion 优先抬升** —— v5.2 主 Agent 合成的跨 tier 综述,**单一来源**位于顶层 `response.ai_suggestion`(不再分 tier);skill 在 `## ⚠️ 强制规则` 之后、`## 📚 相关文档` 之前以 `> 💡 主 Agent 综述` 块引用形式渲染一次,标签按 `agent_status` (ok/degraded/disabled) 派生
 - **自动批量 fetch + 合成带引用的答案** —— 一次 `wiki_get_page` 把 top-3 static + top-2 dynamic 全取回，跨页面写实质内容（不是只抄 summary）
 - **轨迹日志反馈 Q-Value**
 
@@ -258,7 +273,7 @@ $ARGUMENTS
 
 ## 工作流
 
-**核心**：每次 cann-ask 调用 = 1 次 `wiki_search` + 1 次 `wiki_get_page`。query 是 30-150 字的聚焦自然语言提问（**不**抽实体、**不**挑 tags、**不**拆 sub-query）；`phase` 从 `device_feedback` 自动派生；`tags` 一律 `[]`；`include_dynamic` 默认不传（信任自动门控）。
+**核心**：每次 cann-ask 调用 = 1 次 `wiki_search` + 1 次 `wiki_get_page`。query 是 30-150 字的聚焦自然语言提问（**不**抽实体、**不**挑 tags、**不**拆 sub-query）；`phase` 从 `device_feedback` 自动派生；`tags` 一律 `[]`；tier2 由 server 主 Agent 自动预跑(v5.2 已无 `include_dynamic` 客户端开关)。
 
 ### 阶段 B：构造 query + 决定 phase + 单次检索
 
@@ -299,14 +314,12 @@ wiki_search(
   call_count:       <int>,                                         # caller 传入；单次人类问答 = 0
   seen_ids:         [...] | null,                                  # caller 传入；单次人类问答 = null
   device_feedback:  "<caller 已截断的上轮报错原文>" | null,           # 第一轮可空；第二轮起必填
-  # include_dynamic 不传（默认 False → 信任自动门控：
-  # phase∈{precision,performance,all} 或 device_feedback 非空时 spawn tier2 Agent）
 )
 ```
 
 各入参语义详见 §"MCP 工具契约详解" → wiki_search 入参表。
 
-> ⚠️ **`include_dynamic` 默认不传** —— round 1（correctness + 无 feedback）下 tier2 不 spawn、`dynamic.results=[]` 是预期行为，**不要为了拿 recipe 就强开 include_dynamic**（会把 round 1 拖到 20-90s 延迟）。
+> ℹ️ **tier2 由 server 预跑** —— v5.2 移除了 `include_dynamic` 参数,主 Agent 一次同时编排 tier1 + tier2;客户端不再控制。若 `dynamic.results == []`,通常是主 Agent 判定本区无可用 recipe(看 `dynamic.no_useful_results`)而非未跑。
 
 > ⚠️ `call_count == 0` 才返 tier0 规则正文；第二轮起 `phase_rule.content_mode = "suppressed"` 且 `content = ""`，渲染时整段跳过（参见阶段 D）。
 
@@ -331,17 +344,15 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 按下面顺序输出。**每段都基于 `wiki_get_page` 返回的页面正文写实质内容**（不是只抄 summary）。完整版式见下方"输出格式"样例。
 
 1. **`## ⚠️ 强制规则`**（tier0 phase_rule）—— **核心职责，必须最顶部渲染**，详见下方"rule_description 渲染细则"
-2. **`## 📚 相关文档`**（tier1 static）—— 内含子结构：
-   - 若 `static.ai_suggestion` 非空：顶部 `> 💡 **Server 检索建议**（标注 LLM-筛 / Q-sort 兜底） {ai_suggestion 原文，保留 [id:xxx] 引用}`
-   - 主体：基于 `wiki_get_page` 返回的 static page 正文写结构化答案，带 `[Source: <id>]` 内联引用
-3. **`## 🔧 实践 recipe`**（tier2 dynamic）—— 内含子结构：
-   - 若 `dynamic.results` 为空（round 1 默认 tier2 不 spawn）：**整段隐藏**，不留空标题
-   - 若非空且 `dynamic.ai_suggestion` 非空：顶部同上 `> 💡 **Server 检索建议**` 块
+2. **顶层 ai_suggestion 块**（v5.2 单一跨 tier 综述）—— 若 `response.ai_suggestion` 非空,在 `## 📚 相关文档` 之前以 `> 💡 **主 Agent 综述**` 块引用渲染一次,保留 `[id:xxx]` 引用原样。标签按 `response.agent_status` 派生(`ok` / `degraded` 兜底序 / `disabled` Agent off)。详见下方"ai_suggestion 渲染细则"
+3. **`## 📚 相关文档`**（tier1 static）—— 基于 `wiki_get_page` 返回的 static page 正文写结构化答案，带 `[Source: <id>]` 内联引用
+4. **`## 🔧 实践 recipe`**（tier2 dynamic）—— 内含子结构：
+   - 若 `dynamic.results` 为空：**整段隐藏**，不留空标题
    - 主体：每条 recipe 用 `### {scenario}` 三级标题（取自 `dynamic.results[i].scenario`），下接基于 recipe page 正文的实质内容
-4. **References** —— 单一列表，tier 前缀 📚（tier1）/ 🔧（tier2），title 取 `wiki_get_page` 的 `frontmatter.title`
-5. **告警 / 状态汇总**（按需）—— 顶层 `warning` / `static.warning` / `dynamic.warning` / `no_useful_results=true` 提示 / `degraded=true` 提示，详见下方"告警状态渲染细则"
-6. **phase_rule JSON 附末** —— 详见下方"rule_description 渲染细则"
-7. **footer** —— 见阶段 E
+5. **References** —— 单一列表，tier 前缀 📚（tier1）/ 🔧（tier2），title 取 `wiki_get_page` 的 `frontmatter.title`
+6. **告警 / 状态汇总**（按需）—— 顶层 `warning` / `static.warning` / `dynamic.warning` / `no_useful_results=true` 提示 / `agent_status==degraded`/`disabled` 提示，详见下方"告警状态渲染细则"
+7. **诊断 JSON 附末** —— `phase_rule` + `agent_status` + `agent_turns` + `sub_queries`,详见下方"rule_description 渲染细则"
+8. **footer** —— 见阶段 E
 
 **引用规则**：每个事实必须**内联**引用 `[Source: <id>]`，紧跟事实写而不放到末尾；多来源 `[Source: <id1>, <id2>]`；id 取 `wiki_get_page` 返回值（与 `static.results[i].id` / `dynamic.results[i].id` 一致），不要编造路径。
 
@@ -364,31 +375,43 @@ wiki_get_page(ids=static_ids + dynamic_ids)
   `phase_rule.content` 原样贴出（通常已是规则编号列表，不要二次摘要）。
 - **`content_mode == "suppressed"`** → 整段 `## ⚠️ 强制规则` section **不渲染**（不要渲染只有 description 没有 content 的"空规则告警"，会变成噪声）
 
-**phase_rule JSON 附末**：无论 `content_mode` 是 `inject` 还是 `suppressed`，**都要**把完整 `phase_rule` JSON 原样附在答案最末的独立 ```json fenced block 里：
+**诊断 JSON 附末**：无论 `content_mode` 是 `inject` 还是 `suppressed`，**都要**把完整 `phase_rule` + v5.2 顶层诊断字段（`agent_status`/`agent_turns`/`sub_queries`）原样附在答案最末的独立 ```json fenced block 里：
 
 ```json
-{ "phase_rule": { ... server 返回原文 ... } }
+{
+  "phase_rule":    { ... server 返回原文 ... },
+  "agent_status":  "ok" | "degraded" | "disabled",
+  "agent_turns":   <int | null>,
+  "sub_queries":   [...] | null
+}
 ```
 
-用途：trajectory 上报、phase_rule 命中统计、eval 侧解析。
+用途：trajectory 上报、phase_rule 命中统计、主 Agent 行为审计、eval 侧解析。
 
 #### ai_suggestion 渲染细则
 
-`static.ai_suggestion` / `dynamic.ai_suggestion` 是 server 端 LLM 已经合成好的整体检索建议，内嵌 `[id:<完整ID>]` 引用（与 results 的 id 对应）。**优先级高 —— 是 server 端"读过 top-N 之后的提炼"，比 cann-ask 这边只看 summary 更准。**
+v5.2 主 Agent 把跨 tier 综述抬到**顶层** `response.ai_suggestion`（单一来源,内嵌 `[id:<完整ID>]` 引用,可指 tier1 或 tier2 ID）。**优先级高 —— 是 server 端"读过 top-N 之后的提炼"，比 cann-ask 这边只看 summary 更准。**
 
 **渲染规则**：
 
-- 若 `block.ai_suggestion` 非空（block ∈ {static, dynamic}）→ 在该 tier section 主体之前以 markdown 块引用形式渲染：
+- 若 `response.ai_suggestion` 非空 → 在 `## ⚠️ 强制规则` 之后、`## 📚 相关文档` 之前**渲染一次**(不再分 tier1/tier2 重复渲染)：
 
   ```markdown
-  > 💡 **Server 检索建议**（LLM 筛 / Q-sort 兜底）
+  > 💡 **{label}**
   >
-  > {block.ai_suggestion 原文，保留 [id:xxx] 内联引用不改写}
+  > {response.ai_suggestion 原文，保留 [id:xxx] 内联引用不改写}
   ```
 
-  标注语取决于 `block.agent_filtered`：`true` → "LLM 筛"，`false` → "Q-sort 兜底"
-- 若 `block.ai_suggestion` 为 None / 空字符串 → 整个 `> 💡 Server 检索建议` 块不渲染
-- 渲染顺序：**ai_suggestion 块在 section 主体之前**，让下游 codegen 模型最先读到 server 端的精炼建议；主体的 page-body 合成在下方作为补充细节
+  `{label}` 按 `response.agent_status` 派生：
+
+  | `agent_status` | `{label}` |
+  |---|---|
+  | `"ok"` | `主 Agent 综述`（主 Agent 跨 tier 合成,可信） |
+  | `"degraded"` | `检索建议`（主 Agent 兜底序,相关性可能下降） |
+  | `"disabled"` | `检索建议`（Agent off,纯漏斗序） |
+
+- 若 `response.ai_suggestion` 为 `null` / 空字符串 → 整个 `> 💡` 块不渲染
+- 渲染位置：**强制规则之后、tier 主体之前**,让下游 codegen 模型先读到精炼建议,主体的 page-body 合成在下方作为补充细节
 - **`[id:xxx]` 引用原样保留**，与 References 列表 ID 对齐，不要改成 `[Source: xxx]` 或其他变体
 
 #### 告警状态渲染细则
@@ -400,12 +423,12 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 | 顶层告警 | `response.warning` 非空 | `> ⚠️ **Server warning**: {warning}` |
 | tier1 告警 | `static.warning` 非空 | `> ⚠️ **Tier1 warning**: {static.warning}` |
 | tier2 告警 | `dynamic.warning` 非空 | `> ⚠️ **Tier2 warning**: {dynamic.warning}` |
-| tier1 无可用 | `static.no_useful_results == true` | `> ℹ️ Tier1 LLM 判定本区无可用结果，建议重述 query` |
-| tier2 无可用 | `dynamic.no_useful_results == true` | `> ℹ️ Tier2 LLM 判定本区无可用 recipe，建议补充 device_feedback 关键信息` |
-| tier1 兜底 | `static.degraded == true` | `> ⚠️ Tier1 Agent 失败/超时，results 来自 Q-sort 兜底序，相关性可能下降` |
-| tier2 兜底 | `dynamic.degraded == true` | `> ⚠️ Tier2 Agent 失败/超时，results 来自 recall 兜底序，相关性可能下降` |
+| tier1 无可用 | `static.no_useful_results == true` | `> ℹ️ Tier1 主 Agent 判定本区无可用结果，建议重述 query` |
+| tier2 无可用 | `dynamic.no_useful_results == true` | `> ℹ️ Tier2 主 Agent 判定本区无可用 recipe，建议补充 device_feedback 关键信息` |
+| 主 Agent 兜底 | `response.agent_status == "degraded"` | `> ⚠️ 主 Agent 失败/超时，两 tier results 来自漏斗兜底序，相关性可能下降 (turns: {agent_turns})` |
+| Agent off | `response.agent_status == "disabled"` | `> ℹ️ 本次未走主 Agent (server cfg / 输入异常);results 为纯漏斗序` |
 
-**原样透传**，不重试不降级。
+**原样透传**，不重试不降级。v5.2 把原 per-tier 的 `agent_filtered` / `degraded` bool 合并为顶层 `agent_status` 枚举,因此 tier1/tier2 共享同一个 Agent 状态。
 
 ### 阶段 E：footer 提示上传轨迹
 
@@ -422,19 +445,15 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 2. DataCopy 后必须 EnQue/DeQue 配对，避免读未同步数据。
 3. ...
 
-## 📚 相关文档
-
-> 💡 **Server 检索建议**（LLM 筛）
+> 💡 **主 Agent 综述**
 >
-> 关于 910B 上 fp16 gemm_add_relu，推荐先看 [id:api_reference:matmul-api] 的 tiling 模式，再结合 [id:practice:fp16-fusion-pattern] 的融合写法；DataCopy 注意权重 NZ 排布对齐要求。
+> 关于 910C 上 fp16 gemm_add_relu，推荐先看 [id:api_reference:matmul-api] 的 tiling 模式，再结合 [id:practice:fp16-fusion-pattern] 的融合写法；针对 DataCopy block size mismatch，[id:recipe:datacopy-block-align] 给出的对齐校验步骤最直接可用。
+
+## 📚 相关文档
 
 [基于 tier1 static 页面正文的结构化答案，带 [Source: <id>] 引用]
 
 ## 🔧 实践 recipe
-
-> 💡 **Server 检索建议**（LLM 筛）
->
-> 针对 DataCopy block size mismatch，[id:recipe:datacopy-block-align] 给出的对齐校验步骤最直接可用。
 
 ### {scenario_1}
 
@@ -461,7 +480,10 @@ wiki_get_page(ids=static_ids + dynamic_ids)
     "description": "⚠️ 强制约束：phase_rule 中列出的踩坑规则是当前阶段的硬性要求……",
     "estimated_tokens": 0,
     "rule_refs": [{"phase": "correctness", "version": "...", "full_page_id": "rule:correctness"}]
-  }
+  },
+  "agent_status": "ok",
+  "agent_turns": 2,
+  "sub_queries": ["gemm_add_relu fp16 tiling", "DataCopy block align"]
 }
 ```
 
@@ -474,10 +496,10 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 - **task_description 跨轮 verbatim 不变** —— caller 责任：round 1 起逐字节缓存重传；skill 内**不修改、不重写、不润色**
 - **phase 从 device_feedback 自动派生** —— round 1 默认 `correctness`；round N 按 feedback 内容映射到 `correctness` / `precision` / `performance`。**禁止** `phase=all`
 - **tags 暂置空 `[]`** —— server 走全量召回；未来若启用 tag 召回再填
-- **`include_dynamic` 不传** —— 信任 server 自动门控（phase 或 device_feedback 决定 tier2 是否 spawn）；round 1 `dynamic.results=[]` 是预期，**不要为了 round 1 拿 recipe 而强开 include_dynamic**（会拖 20-90s 延迟）
-- **rule_description 强制抬升** —— `phase_rule.content_mode == "inject"` 时渲染 `## ⚠️ 强制规则` section 到答案最顶；`suppressed` 时整段跳过；完整 `phase_rule` JSON 无论何种 content_mode 都附在答案最末
-- **ai_suggestion 优先渲染** —— `static.ai_suggestion` / `dynamic.ai_suggestion` 在各自 tier section 主体之前以 `> 💡 Server 检索建议` 块引用形式渲染；`[id:xxx]` 引用原样保留
-- **告警状态机器可判** —— `agent_filtered` / `no_useful_results` / `degraded` 由 server 标注；按 §"告警状态渲染细则" 透传，不重试不降级
+- **tier2 由 server 预跑** —— v5.2 已无 `include_dynamic` 客户端开关;主 Agent 一次同时编排 tier1+tier2;`dynamic.results == []` 看 `dynamic.no_useful_results` 判断是"无可用"而非"未跑"
+- **rule_description 强制抬升** —— `phase_rule.content_mode == "inject"` 时渲染 `## ⚠️ 强制规则` section 到答案最顶；`suppressed` 时整段跳过；完整 `phase_rule` + `agent_status`/`agent_turns`/`sub_queries` JSON 无论何种 content_mode 都附在答案最末
+- **顶层 ai_suggestion 单次渲染** —— v5.2 主 Agent 跨 tier 综述抬到顶层 `response.ai_suggestion`,在强制规则之后、tier 主体之前以 `> 💡 主 Agent 综述` 块引用渲染**一次**;标签按 `agent_status` 派生(ok / degraded 兜底序 / disabled Agent off);`[id:xxx]` 引用原样保留
+- **告警状态机器可判** —— `agent_status` (ok/degraded/disabled) + per-tier `no_useful_results` + `warning` 由 server 标注；按 §"告警状态渲染细则" 透传，不重试不降级
 - **path 字段已彻底下沉** —— `id` 是唯一锚点，绝不暴露 / 使用 `path`；批量 fetch 时 `static_top_3 + dynamic_top_2` 合并到**一次** `wiki_get_page` 调用
 - **score 仅 tier 内可比** —— `static.score` 与 `dynamic.score` 用不同打分器，不要跨 tier 合并排序
 - **tier 由响应分区决定** —— 不要从 id 文本前缀（`{type}:{slug}`）反推
@@ -490,10 +512,11 @@ wiki_get_page(ids=static_ids + dynamic_ids)
 | 场景 | 处理 |
 |------|------|
 | MCP Server 未启动 | 提示启动命令 |
-| `wiki_search` 响应缺三分区字段 | 调 `wiki_help()` 拿当前契约，告诉用户 server 版本不匹配；不要强解析 |
+| `wiki_search` 响应缺 v5.2 顶层字段（`phase_rule`/`ai_suggestion`/`agent_status`/`static`/`dynamic`） | 调 `wiki_help()` 拿当前契约，告诉用户 server 版本不匹配；不要强解析 |
 | `wiki_search` 结果为空（`static` 和 `dynamic` 都空），或响应携带 `warning` | 把 warning 文本原样转给用户；建议调整 query 措辞 |
-| `static.no_useful_results == true` | 渲染 `> ℹ️ Tier1 LLM 判定本区无可用结果...` 告警；results 不删（让用户判断） |
-| `static.degraded == true` 或 `dynamic.degraded == true` | 渲染对应 `> ⚠️ ... Agent 失败/超时...` 告警；results 不删 |
+| `static.no_useful_results == true` | 渲染 `> ℹ️ Tier1 主 Agent 判定本区无可用结果...` 告警；results 不删（让用户判断） |
+| `response.agent_status == "degraded"` | 渲染 `> ⚠️ 主 Agent 失败/超时...` 告警；两 tier results 都来自漏斗兜底序,不删 |
+| `response.agent_status == "disabled"` | 渲染 `> ℹ️ 本次未走主 Agent (server cfg / 输入异常)...` 告警；results 为纯漏斗序,不删 |
 | `wiki_get_page` 部分失败 | 列出 `errors[]` 中未解析的 id；用 `pages[]` 继续合成 |
 | `phase_rule.content_mode == "suppressed"` | graceful 跳过顶部 `## ⚠️ 强制规则` section；JSON 附末仍保留 |
 | `wiki_submit_trajectory` 失败 | 不在本 skill 处理，走 `session-upload` skill |
