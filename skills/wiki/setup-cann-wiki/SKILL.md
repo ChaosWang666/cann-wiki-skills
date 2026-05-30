@@ -15,7 +15,7 @@ setup 之前，检查：
 
 1. **MCP Server 在跑吗？**
    - 尝试调用 `wiki_search("test", limit=1)` MCP 工具（无副作用的探测）
-   - 或检查 3000 端口是否在监听：`curl -sI http://localhost:3000/mcp | head -3`（401/406 都是健康响应 —— 说明 streamable-http endpoint 已起，只是裸请求缺 MCP header）
+   - 或探活专用端点：`curl -s http://localhost:3000/healthz`（返回 `{"status":"ok"}` + HTTP 200 即健康）。旧版 server 无此端点时退回 `curl -sI http://localhost:3000/mcp | head -3`（405/406 也算健康 —— streamable-http endpoint 已起，只是 HEAD/裸请求缺 MCP header）
    - 没在跑 → 提示用户先启动
 
 2. **Agent MCP 配置文件存在吗？**
@@ -33,11 +33,12 @@ setup 之前，检查：
 
 确认 MCP Server 在运行：
 
-1. 检查 3000 端口是否监听：
+1. 检查 3000 端口是否监听（优先用探活端点，拿干净的 200）：
    ```bash
-   curl -sI http://localhost:3000/mcp | head -3
+   curl -s http://localhost:3000/healthz        # {"status":"ok"} = 健康
+   # 旧版 server 无 /healthz 时退回（HEAD，405/406 也算健康）：
+   # curl -sI http://localhost:3000/mcp | head -3
    ```
-   401 / 406 都是健康响应 —— 说明 streamable-http endpoint 已起。
 
 2. **拉一次 server 自描述**（HTTP，无需 MCP 配置就能跑）：
    ```bash
