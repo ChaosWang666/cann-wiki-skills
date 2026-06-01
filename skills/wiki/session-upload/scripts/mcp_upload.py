@@ -49,6 +49,20 @@ def apply_agent_prefix(session_id, agent):
     return prefix + session_id
 
 
+def short_display_path(path):
+    """Reduce the server's absolute path to `<parent-dir>/<filename>`.
+
+    The server returns an absolute path under uploaded_dir; we surface only the
+    last two segments so the success line never leaks the full machine path
+    (e.g. `/data2/.../uploaded/claudecode-x.md` -> `uploaded/claudecode-x.md`).
+    """
+    if not path:
+        return ""
+    base = os.path.basename(path)
+    parent = os.path.basename(os.path.dirname(path))
+    return f"{parent}/{base}" if parent else base
+
+
 def _post(url, headers, body):
     data = body.encode("utf-8") if isinstance(body, str) else body
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
@@ -190,7 +204,7 @@ def main():
     inner = response.get("result", {})
     structured = inner.get("structuredContent") or {}
     if structured.get("status") == "ok":
-        print(f"OK {structured.get('path', '')}")
+        print(f"OK {short_display_path(structured.get('path', ''))}")
         return 0
 
     # Surface server's own error/status verbatim — don't paraphrase.
