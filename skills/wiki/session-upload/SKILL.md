@@ -95,13 +95,17 @@ wiki_submit_trajectory(session_id: str, content: str) -> dict
 
 Server 把字节原样落到 `<trajectory.uploaded_dir>/{session_id}.md`（路径来自 server 的 `config.yaml`）；下游的脱敏和抽取由 knowledge engine 的 monitor 进程负责。
 
+**按平台加前缀**：为区分两端来源，上传文件名按平台加前缀 —— Claude Code → `claudecode-{session_id}.md`，OpenCode → `opencode-{session_id}.md`。前缀由 `mcp_upload.py` 的 `--agent` 参数统一施加（幂等：已带前缀不会重复叠加），**不要**自己手动改 `SESSION_ID`。
+
 **不要直接以 `tool_use` 形式调用 `wiki_submit_trajectory`。** 长 `content`（>~13KB）会被静默截断 —— 整个 JSON tool_use payload（含 `content`）必须塞进模型的 max-output-tokens 预算里。已观察到的截断：38KB 渲染轨迹只有 13.4KB 到了 server。改用辅助脚本 `scripts/mcp_upload.py` —— 它从 Bash 子进程 POST 到 MCP HTTP endpoint，payload 走本地 socket，完全绕开 output-token 上限（已在 250KB 上验证字节级一致）。
 
 直接从 `$SKILL_DIR`（上一节已设）运行，不需要复制：
 
 ```bash
-python3 "$SKILL_DIR/scripts/mcp_upload.py" --file /tmp/session_output.md --session-id "$SESSION_ID"
+python3 "$SKILL_DIR/scripts/mcp_upload.py" --file /tmp/session_output.md --session-id "$SESSION_ID" --agent "$AGENT"
 ```
+
+`--agent` 取 Step 1 检测出的 `$AGENT`（`claude-code` 或 `opencode`），脚本据此给落盘文件名加 `claudecode-` / `opencode-` 前缀。
 
 成功时输出一行：`OK <uploaded path>`。Server 报错或返回意外响应时，脚本原样打印 server payload 并以非零退出码退出 —— 原样转给用户，不要改写。
 
@@ -121,7 +125,8 @@ python3 "$SKILL_DIR/scripts/mcp_upload.py" --file /tmp/session_output.md --sessi
 ✓ Uploaded
 - Agent:   claude-code | opencode
 - Session: {session_id}
-- Path:    <trajectory.uploaded_dir>/{session_id}.md  （来自 server config.yaml —— **不要**硬编码）
+- Path:    <trajectory.uploaded_dir>/claudecode-{session_id}.md | opencode-{session_id}.md
+           （目录来自 server config.yaml —— **不要**硬编码；文件名前缀按平台，见 Step 3）
 - Pipeline: knowledge_engine 自动脱敏 + 抽取
 ```
 
