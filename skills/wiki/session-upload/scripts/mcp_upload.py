@@ -8,7 +8,12 @@ truncated mid-string. This script is invoked from Bash, so the payload travels
 over a local HTTP socket — verified byte-identical at 250KB.
 
 Usage:
-    python3 mcp_upload.py --file /tmp/session_output.md --session-id <id>
+    python3 mcp_upload.py --file /tmp/session_output.md --session-id <id> [--agent claude-code|opencode]
+
+The optional `--agent` flag namespaces the uploaded filename by platform so
+Claude Code and OpenCode trajectories don't collide and stay visually grouped:
+`claude-code` -> `claudecode-<id>.md`, `opencode` -> `opencode-<id>.md`. The
+prefix is applied idempotently (re-running on an already-prefixed id is a no-op).
 
 URL resolution order:
     --url flag  >  $CANN_WIKI_MCP_URL  >  agent MCP config (cann-wiki entry's
@@ -24,6 +29,24 @@ import os
 import sys
 import urllib.request
 from urllib.error import HTTPError, URLError
+
+# Per-platform filename prefixes. Keys match SKILL.md's `$AGENT` values.
+_AGENT_PREFIXES = {
+    "claude-code": "claudecode-",
+    "opencode": "opencode-",
+}
+
+
+def apply_agent_prefix(session_id, agent):
+    """Prepend the platform prefix to session_id, idempotently.
+
+    Unknown/empty agent -> session_id unchanged. Already-prefixed -> unchanged,
+    so re-uploading the same session never stacks `claudecode-claudecode-...`.
+    """
+    prefix = _AGENT_PREFIXES.get(agent)
+    if not prefix or session_id.startswith(prefix):
+        return session_id
+    return prefix + session_id
 
 
 def _post(url, headers, body):
@@ -97,12 +120,20 @@ def main():
     p.add_argument("--file", required=True, help="Path to rendered Markdown transcript")
     p.add_argument("--session-id", required=True, help="Session id used as <session_id>.md filename")
     p.add_argument(
+        "--agent",
+        choices=sorted(_AGENT_PREFIXES),
+        default=None,
+        help="Platform that produced the trajectory; prefixes the uploaded "
+             "filename (claude-code -> claudecode-, opencode -> opencode-)",
+    )
+    p.add_argument(
         "--url",
         default=None,
         help="MCP HTTP endpoint (default: $CANN_WIKI_MCP_URL > agent MCP config > http://localhost:3000/mcp)",
     )
     args = p.parse_args()
     args.url = _resolve_url(args.url)
+    args.session_id = apply_agent_prefix(args.session_id, args.agent)
 
     with open(args.file, encoding="utf-8") as f:
         content = f.read()
