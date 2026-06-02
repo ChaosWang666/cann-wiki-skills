@@ -30,19 +30,27 @@ class DeriveOpTest(unittest.TestCase):
 
 
 class DeriveRunIdTest(unittest.TestCase):
-    def test_parent_run_dir(self):
+    def test_experiment_name_is_filename(self):
+        # 文件名 = 实验名 (run 目录上两级), 与 run 号无关
         self.assertEqual(
-            derive_run_id("/x/claude/run0/gemm_add_relu.progress.md"), "run0")
+            derive_run_id("/o/debug_test_v4/claude/run0/mla_prolog.progress.md"),
+            "debug_test_v4")
+        self.assertEqual(
+            derive_run_id("/o/parallel_test/openai/run3/gather.progress.md"),
+            "parallel_test")
 
-    def test_parent_run_dir_multi_digit(self):
-        self.assertEqual(derive_run_id("/x/claude/run12/op.progress.md"), "run12")
+    def test_same_experiment_diff_run_overwrites(self):
+        # 不带 run 号: 同实验不同 run → 同一文件名 (覆盖, 符合"不需要 run_id")
+        a = derive_run_id("/o/exp/claude/run0/op.progress.md")
+        b = derive_run_id("/o/exp/claude/run1/op.progress.md")
+        self.assertEqual(a, b)
 
-    def test_non_run_parent_returns_none(self):
+    def test_no_experiment_dir_returns_none(self):
         self.assertIsNone(derive_run_id("/x/output/op.progress.md"))
 
     def test_explicit_run_wins(self):
         self.assertEqual(
-            derive_run_id("/x/claude/run0/op.progress.md", "retry"), "retry")
+            derive_run_id("/o/exp/claude/run0/op.progress.md", "retry"), "retry")
 
 
 class ShortDisplayPathTest(unittest.TestCase):

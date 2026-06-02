@@ -15,8 +15,13 @@ subprocess over a local HTTP socket, fully bypassing the cap.
 Usage:
     python3 progress_upload.py --file <op>.progress.md [--op NAME] [--run-id RUN]
 
-`--op` / `--run-id` are auto-derived from the path when omitted:
-    .../claude/run0/gemm_add_relu.progress.md  ->  op=gemm_add_relu, run_id=run0
+Archive layout: folder = operator name, filename = experiment name.
+`--op` comes from the filename; the experiment (passed to the server as `run_id`)
+is the dir above the adapter/run dirs:
+    .../output/debug_test_v4/claude/run0/mla_prolog.progress.md
+        ->  mla_prolog/debug_test_v4.progress.md
+Re-running the same experiment overwrites its file. Override with `--op` /
+`--run-id` when needed.
 
 URL resolution order:
     --url flag  >  $CANN_WIKI_MCP_URL  >  agent MCP config (cann-wiki entry's
@@ -51,16 +56,24 @@ def derive_op(file_path, explicit_op=None):
 
 
 def derive_run_id(file_path, explicit_run=None):
-    """Run id = explicit value, else the parent dir name if it looks like `run<N>`.
+    """Archived **filename** = the experiment name (the folder stays the op).
 
-    `.../claude/run0/x.progress.md` -> `run0`. No match -> None (server then
-    names the file `<op>.progress.md`).
+    The server stores at `<op>/<run_id>.progress.md`, so we pass the experiment
+    as `run_id` to get `<op>/<experiment>.progress.md`:
+        .../output/debug_test_v4/claude/run0/mla_prolog.progress.md
+            -> mla_prolog/debug_test_v4.progress.md
+
+    Experiment = the directory above the adapter (`claude`/`openai`) and `run<N>`
+    dirs, i.e. two levels above the `run<N>` segment. Returns `explicit_run` when
+    given; None when the experiment dir can't be located (server then uses `<op>`).
+    No run-number is used — re-running the same experiment overwrites its file.
     """
     if explicit_run:
         return explicit_run
-    parent = os.path.basename(os.path.dirname(os.path.abspath(file_path)))
-    if _RUN_RE.fullmatch(parent):
-        return parent.lower()
+    parts = os.path.abspath(file_path).split(os.sep)
+    run_idx = next((i for i, p in enumerate(parts) if _RUN_RE.fullmatch(p)), None)
+    if run_idx is not None and run_idx >= 2:
+        return parts[run_idx - 2]        # <experiment>/<adapter>/run<N>
     return None
 
 

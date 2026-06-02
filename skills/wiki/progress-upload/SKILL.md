@@ -61,11 +61,13 @@ Server 把字节原样落到 `<progress.uploaded_dir>/<op>/<run_id or op>.progre
 python3 "$SKILL_DIR/scripts/progress_upload.py" --file "$FILE"
 ```
 
-`op` / `run_id` 默认从路径自动派生:`.../claude/run0/gemm_add_relu.progress.md` → `op=gemm_add_relu`、`run_id=run0`。需要覆盖时显式传 `--op NAME` / `--run-id RUN`。
+归档布局:**文件夹 = 算子名,文件名 = 实验名**,即 `<op>/<实验名>.progress.md`。
+`op` 从文件名派生;**实验名**(作为 `run_id` 传给 server)取路径里 adapter/run 目录的上一层(run 目录的上两级)。例:
+`.../output/debug_test_v4/claude/run0/mla_prolog.progress.md` → `mla_prolog/debug_test_v4.progress.md`。重跑同一实验会覆盖其文件。需要时显式传 `--op NAME` / `--run-id 实验名`。
 
 URL 解析优先级:`--url` > `$CANN_WIKI_MCP_URL` > agent MCP 配置(向上找 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url`,再退到 `~/.claude.json`)> 默认 `http://localhost:3000/mcp`。跑过 `/setup-cann-wiki` 后端口自动对齐,**无需手动设环境变量**。
 
-成功输出一行:`OK <op>/<文件名>`(如 `OK gemm_add_relu/run0.progress.md`)—— 只回显末级目录加文件名,**不暴露完整绝对路径**。Server 报错或意外响应时,脚本原样打印 server payload 并非零退出 —— 原样转给用户,不要改写。
+成功输出一行:`OK <op>/<文件名>`(如 `OK mla_prolog/debug_test_v4.progress.md`)—— 只回显末级目录加文件名,**不暴露完整绝对路径**。Server 报错或意外响应时,脚本原样打印 server payload 并非零退出 —— 原样转给用户,不要改写。
 
 **禁止**:
 - 把 `wiki_submit_progress` 当 tool_use 直接调用(如上所述会截断)
@@ -96,6 +98,7 @@ URL 解析优先级:`--url` > `$CANN_WIKI_MCP_URL` > agent MCP 配置(向上找 
 
 ## 注意事项
 
-- **op 归档** —— 同一算子多次运行用不同 `run_id` 区分(默认取父目录 `run<N>`);相同 `op`+`run_id` 重传会覆盖。
+- **归档布局** —— `<op>/<实验名>.progress.md`:同一算子的不同**实验**在该 op 目录下并排各一份(文件名 = 实验名);op 目录已存在直接复用(`mkdir exist_ok`)。
+- **同实验重传即覆盖,无版本** —— server 用 `write_text` 写固定路径:相同 `(算子, 实验名)` 重传**原地覆盖**、只留最新(不报错、不新增、不留旧版)。所以**整批重传是幂等的**:没变的覆盖回自身、改过的更新为最新、新实验追加,不会堆出重复文件。同一实验若想保留多次快照,显式 `--run-id` 给不同值(如带时间戳)。
 - **原样保留** —— progress.md 全文原样上传,不截断、不摘要;脱敏/抽取是下游的事。
 - **自测** —— 派生逻辑有单测:`cd "$SKILL_DIR/scripts" && python -m unittest discover -s tests -p 'test_*.py'`。
