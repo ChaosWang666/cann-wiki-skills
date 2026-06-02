@@ -3,6 +3,7 @@
   "skills": [
     "./skills/wiki/setup-cann-wiki",
     "./skills/wiki/cann-ask",
-    "./skills/wiki/session-upload"
+    "./skills/wiki/session-upload",
+    "./skills/wiki/progress-upload"
   ]
 }
