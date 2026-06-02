@@ -15,7 +15,7 @@ setup 之前，检查：
 
 1. **MCP Server 在跑吗？**
    - 尝试调用 `wiki_search("test", limit=1)` MCP 工具（无副作用的探测）
-   - 或探活专用端点：`curl -s http://localhost:3000/healthz`（返回 `{"status":"ok"}` + HTTP 200 即健康）。旧版 server 无此端点时退回 `curl -sI http://localhost:3000/mcp | head -3`（405/406 也算健康 —— streamable-http endpoint 已起，只是 HEAD/裸请求缺 MCP header）
+   - 或探活专用端点：`curl -s http://113.46.4.206:8767/healthz`（返回 `{"status":"ok"}` + HTTP 200 即健康）。旧版 server 无此端点时退回 `curl -sI http://113.46.4.206:8767/mcp | head -3`（405/406 也算健康 —— streamable-http endpoint 已起，只是 HEAD/裸请求缺 MCP header）
    - 没在跑 → 提示用户先启动
 
 2. **Agent MCP 配置文件存在吗？**
@@ -33,18 +33,18 @@ setup 之前，检查：
 
 确认 MCP Server 在运行：
 
-1. 检查 3000 端口是否监听（优先用探活端点，拿干净的 200）：
+1. 检查 8767 端口是否监听（优先用探活端点，拿干净的 200）：
    ```bash
-   curl -s http://localhost:3000/healthz        # {"status":"ok"} = 健康
+   curl -s http://113.46.4.206:8767/healthz        # {"status":"ok"} = 健康
    # 旧版 server 无 /healthz 时退回（HEAD，405/406 也算健康）：
-   # curl -sI http://localhost:3000/mcp | head -3
+   # curl -sI http://113.46.4.206:8767/mcp | head -3
    ```
 
 2. **拉一次 server 自描述**（HTTP，无需 MCP 配置就能跑）：
    ```bash
-   curl -s http://localhost:3000/help | head -40
+   curl -s http://113.46.4.206:8767/help | head -40
    ```
-   返回 markdown 说明（默认）；`curl -s 'http://localhost:3000/help?format=json'` 拿结构化 JSON。把工具列表 echo 给用户看一眼，确认包含 `wiki_search` / `wiki_get_page` / `wiki_help` / `wiki_submit_trajectory`。对不上就先停下，提示用户检查 server。
+   返回 markdown 说明（默认）；`curl -s 'http://113.46.4.206:8767/help?format=json'` 拿结构化 JSON。把工具列表 echo 给用户看一眼，确认包含 `wiki_search` / `wiki_get_page` / `wiki_help` / `wiki_submit_trajectory`。对不上就先停下，提示用户检查 server。
 
 3. 或者（agent 配置完成后）直接调用 MCP 工具：
    ```
@@ -59,7 +59,7 @@ setup 之前，检查：
   ```bash
   # 在 AscendC-Kernel-Wiki 仓根目录（有 wiki/ 和 raw/ 的地方）
   cd mcp-server
-  IS_SANDBOX=1 python server.py --port 3000 --host 0.0.0.0
+  IS_SANDBOX=1 python server.py --port 8767 --host 0.0.0.0
 
   # 非 root 用户可以不带 IS_SANDBOX=1
   ```
@@ -96,7 +96,7 @@ setup 之前，检查：
   "mcp": {
     "cann-wiki": {
       "type": "remote",
-      "url": "http://localhost:3000/mcp",
+      "url": "http://113.46.4.206:8767/mcp",
       "enabled": true
     }
   }
@@ -107,10 +107,10 @@ setup 之前，检查：
 
 ```bash
 # 项目级（通过 .mcp.json 提交进仓）
-claude mcp add --transport http --scope project cann-wiki http://localhost:3000/mcp
+claude mcp add --transport http --scope project cann-wiki http://113.46.4.206:8767/mcp
 
 # 或用户级（跨项目，存在用户配置里）
-claude mcp add --transport http --scope user cann-wiki http://localhost:3000/mcp
+claude mcp add --transport http --scope user cann-wiki http://113.46.4.206:8767/mcp
 ```
 
 也可以手写等价的 `.mcp.json`：
@@ -119,7 +119,7 @@ claude mcp add --transport http --scope user cann-wiki http://localhost:3000/mcp
   "mcpServers": {
     "cann-wiki": {
       "type": "http",
-      "url": "http://localhost:3000/mcp"
+      "url": "http://113.46.4.206:8767/mcp"
     }
   }
 }
@@ -136,7 +136,7 @@ claude mcp list           # 应该看到 cann-wiki 处于 connected 状态（Cla
   "mcpServers": {
     "cann-wiki": {
       "command": "python",
-      "args": ["path/to/AscendC-Kernel-Wiki/mcp-server/server.py", "--port", "3000"],
+      "args": ["path/to/AscendC-Kernel-Wiki/mcp-server/server.py", "--port", "8767"],
       "env": {
         "IS_SANDBOX": "1"
       }
@@ -197,7 +197,7 @@ claude mcp list           # 应该看到 cann-wiki 处于 connected 状态（Cla
 - **配置是客户端级别的** —— 不存在 skill 里，存在 agent 配置里
 - **每个 agent 配一次** —— 仅在切换 agent 或 MCP endpoint 变化时重跑
 - **Server 与 client 独立** —— MCP server 独立运行，agent 主动连接
-- **端口非 3000 也无需额外设环境变量** —— `session-upload` 的上传脚本会自动从你这里写的 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url` 拾起端口；cann-ask 走 agent 内置 MCP 客户端，本来就跟随这份配置。
+- **端口非 8767 也无需额外设环境变量** —— `session-upload` 的上传脚本会自动从你这里写的 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url` 拾起端口；cann-ask 走 agent 内置 MCP 客户端，本来就跟随这份配置。
 
 ## 错误处理
 

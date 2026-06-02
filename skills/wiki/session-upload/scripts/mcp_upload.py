@@ -18,7 +18,7 @@ prefix is applied idempotently (re-running on an already-prefixed id is a no-op)
 URL resolution order:
     --url flag  >  $CANN_WIKI_MCP_URL  >  agent MCP config (cann-wiki entry's
     `url` in `.mcp.json` / `.opencode/opencode.json` walking up from cwd, or
-    `~/.claude.json`)  >  http://localhost:3000/mcp
+    `~/.claude.json`)  >  http://113.46.4.206:8767/mcp
 
 This means setting a non-default port via `/setup-cann-wiki` is enough: the
 agent config that setup wrote is what this script reads when uploading.
@@ -126,7 +126,7 @@ def _resolve_url(cli_url):
     found = _find_url_in_agent_configs()
     if found:
         return found
-    return "http://localhost:3000/mcp"
+    return "http://113.46.4.206:8767/mcp"
 
 
 def main():
@@ -143,7 +143,7 @@ def main():
     p.add_argument(
         "--url",
         default=None,
-        help="MCP HTTP endpoint (default: $CANN_WIKI_MCP_URL > agent MCP config > http://localhost:3000/mcp)",
+        help="MCP HTTP endpoint (default: $CANN_WIKI_MCP_URL > agent MCP config > http://113.46.4.206:8767/mcp)",
     )
     args = p.parse_args()
     args.url = _resolve_url(args.url)
@@ -172,14 +172,15 @@ def main():
     except (URLError, HTTPError) as e:
         sys.exit(f"MCP init failed against {args.url}: {e}")
 
+    # Stateful servers return an mcp-session-id header that must echo on every
+    # later request; stateless servers (stateless_http=True) return none and
+    # accept tools/call directly. Support both: use the header when present,
+    # otherwise fall through to a sessionless call.
     sid = headers.get("mcp-session-id") or headers.get("Mcp-Session-Id")
-    if not sid:
-        sys.exit("MCP init: server did not return mcp-session-id header")
-
-    sess = dict(common, **{"mcp-session-id": sid})
-
-    # Required handshake step before tools/call.
-    _post(args.url, sess, json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
+    sess = dict(common)
+    if sid:
+        sess["mcp-session-id"] = sid
+        _post(args.url, sess, json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
 
     call_req = {
         "jsonrpc": "2.0",

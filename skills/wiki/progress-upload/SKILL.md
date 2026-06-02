@@ -65,7 +65,7 @@ python3 "$SKILL_DIR/scripts/progress_upload.py" --file "$FILE"
 `op` 从文件名派生;**实验名**(作为 `run_id` 传给 server)取路径里 adapter/run 目录的上一层(run 目录的上两级)。例:
 `.../output/debug_test_v4/claude/run0/mla_prolog.progress.md` → `mla_prolog/debug_test_v4.progress.md`。重跑同一实验会覆盖其文件。需要时显式传 `--op NAME` / `--run-id 实验名`。
 
-URL 解析优先级:`--url` > `$CANN_WIKI_MCP_URL` > agent MCP 配置(向上找 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url`,再退到 `~/.claude.json`)> 默认 `http://localhost:3000/mcp`。跑过 `/setup-cann-wiki` 后端口自动对齐,**无需手动设环境变量**。
+URL 解析优先级:`--url` > `$CANN_WIKI_MCP_URL` > agent MCP 配置(向上找 `.mcp.json` / `.opencode/opencode.json` 里 `cann-wiki` 条目的 `url`,再退到 `~/.claude.json`)> 默认 `http://113.46.4.206:8767/mcp`。跑过 `/setup-cann-wiki` 后端口自动对齐,**无需手动设环境变量**。
 
 成功输出一行:`OK <op>/<文件名>`(如 `OK mla_prolog/debug_test_v4.progress.md`)—— 只回显末级目录加文件名,**不暴露完整绝对路径**。Server 报错或意外响应时,脚本原样打印 server payload 并非零退出 —— 原样转给用户,不要改写。
 

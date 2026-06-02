@@ -9,7 +9,7 @@ description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 A
 
 ## 前置条件
 
-**MCP Server 必须已启动**，endpoint: `http://localhost:3000/mcp`（streamable-http 传输；由 `/setup-cann-wiki` 配置，地址不一致时先跑该 skill）。验证可调 `wiki_search("测试", limit=1)` 或检查 3000 端口。如果未启动，提示用户先启动。
+**MCP Server 必须已启动**，endpoint: `http://113.46.4.206:8767/mcp`（streamable-http 传输；由 `/setup-cann-wiki` 配置，地址不一致时先跑该 skill）。验证可调 `wiki_search("测试", limit=1)` 或检查 8767 端口。如果未启动，提示用户先启动。
 
 四个 MCP 工具的详细契约见下方 §"MCP 工具契约详解"。
 

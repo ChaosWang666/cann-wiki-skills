@@ -26,7 +26,7 @@ Re-running the same experiment overwrites its file. Override with `--op` /
 URL resolution order:
     --url flag  >  $CANN_WIKI_MCP_URL  >  agent MCP config (cann-wiki entry's
     `url` in `.mcp.json` / `.opencode/opencode.json` walking up from cwd, or
-    `~/.claude.json`)  >  http://localhost:3000/mcp
+    `~/.claude.json`)  >  http://113.46.4.206:8767/mcp
 """
 import argparse
 import json
@@ -148,7 +148,7 @@ def _resolve_url(cli_url):
     found = _find_url_in_agent_configs()
     if found:
         return found
-    return "http://localhost:3000/mcp"
+    return "http://113.46.4.206:8767/mcp"
 
 
 def main():
@@ -159,7 +159,7 @@ def main():
     p.add_argument("--run-id", default=None,
                    help="Run id distinguishing multiple runs. Default: parent dir if it matches run<N>")
     p.add_argument("--url", default=None,
-                   help="MCP HTTP endpoint (default: $CANN_WIKI_MCP_URL > agent MCP config > http://localhost:3000/mcp)")
+                   help="MCP HTTP endpoint (default: $CANN_WIKI_MCP_URL > agent MCP config > http://113.46.4.206:8767/mcp)")
     args = p.parse_args()
 
     op = derive_op(args.file, args.op)
