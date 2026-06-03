@@ -40,9 +40,16 @@ elif command -v opencode >/dev/null 2>&1 \
      && opencode session list -n 1 --format json 2>/dev/null | jq -e '.[0].id' >/dev/null 2>&1; then
   AGENT=opencode
 else
-  ENC_CWD="$(pwd | sed 's|/|-|g')"
+  # Claude Code 把 cwd 编码成项目目录名时, 同时把 `/` 和 `_` 都替换成 `-`
+  # (例: /mnt/ws/claude_code/x → -mnt-ws-claude-code-x), 故 sed 要同时替换两者。
+  ENC_CWD="$(pwd | sed 's/[/_]/-/g')"
   CC_DIR="$HOME/.claude/projects/$ENC_CWD"
-  if [ -d "$CC_DIR" ] && ls "$CC_DIR"/*.jsonl >/dev/null 2>&1; then
+  # 兜底: 编码规则有其他边角 (如 `.`) 时按 basename 反查
+  if [ ! -d "$CC_DIR" ]; then
+    CC_DIR=$(find "$HOME/.claude/projects" -maxdepth 1 -type d \
+             -name "*$(basename "$(pwd)")" 2>/dev/null | head -1)
+  fi
+  if [ -n "$CC_DIR" ] && [ -d "$CC_DIR" ] && ls "$CC_DIR"/*.jsonl >/dev/null 2>&1; then
     AGENT=claude-code
   else
     echo "No supported agent transcript found"; exit 1
@@ -66,8 +73,14 @@ SKILL_DIR="<在 'Base directory for this skill:' 处显示的绝对路径>"
 ## Step 2A：Claude Code 路径
 
 ```bash
-ENC_CWD="$(pwd | sed 's|/|-|g')"
+# Claude Code 编码 cwd 时把 `/` 和 `_` 都替换成 `-`, 故 sed 要同时替换两者。
+ENC_CWD="$(pwd | sed 's/[/_]/-/g')"
 CC_DIR="$HOME/.claude/projects/$ENC_CWD"
+# 兜底: 编码有其他边角时按 basename 反查项目目录
+if [ ! -d "$CC_DIR" ]; then
+  CC_DIR=$(find "$HOME/.claude/projects" -maxdepth 1 -type d \
+           -name "*$(basename "$(pwd)")" 2>/dev/null | head -1)
+fi
 LATEST=$(ls -t "$CC_DIR"/*.jsonl 2>/dev/null | head -1)
 SESSION_ID=$(basename "$LATEST" .jsonl)
 
