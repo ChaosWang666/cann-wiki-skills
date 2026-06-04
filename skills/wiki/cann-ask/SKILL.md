@@ -1,6 +1,6 @@
 ---
 name: cann-ask
-description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 AscendC 相关问题时，必须使用本 skill（不要直接调 MCP），它把任务总目标（task_description，跨轮不变）+ 上轮设备反馈（device_feedback）合成聚焦的自然语言 query、自动派生 phase、单次调用 wiki_search（v5.2 主 Agent 契约），并按新契约渲染 phase_rule（硬约束规则强制抬到最顶）+ 顶层 ai_suggestion（主 Agent 跨 tier 综述，按 agent_status 标注 ok/degraded/disabled）+ tier1/tier2 page bodies（合成带引用的答案）。触发命令：`/cann-ask`。"
+description: "CANN Wiki 知识检索：用自然语言提问检索 AscendC Kernel 开发知识（算子、API、tiling、踩坑规则、排错），返回含强制规则 + 检索建议 + 带引用正文的结构化答案。当用户询问任何 AscendC / Ascend C 相关问题，或 agent loop 需要多轮知识检索时，必须使用本 skill（不要直接调 MCP）。触发命令：`/cann-ask`。"
 ---
 
 # CANN 知识问答 Agent
@@ -24,9 +24,6 @@ description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 A
 | **按需核对**（可选） | `wiki_grep_raw(pattern, scope, …)` | 在 `raw/` grep 真源，核对 API/结构体是否漂移 |
 | **按需核对**（可选） | `wiki_read_raw(path, start, end)` | 扩读某个 raw 文件行段（配合 grep） |
 | **异常对照**（平常不调） | `wiki_help()` | 仅当响应结构与本契约不一致时调，平常不调以免增延迟 |
-| **本 skill 不调** | `wiki_submit_trajectory(session_id, content)` | 轨迹落盘 —— 上传走 `session-upload` skill |
-
-> server 全工具集还含 `wiki_submit_progress`、已弃用的 `wiki_get_index` 等，不在 cann-ask 范围。
 
 ## 触发方式（必须走本 skill，不要直接调 MCP）
 
@@ -36,7 +33,6 @@ description: "CANN Wiki 知识检索（自然语言提问）。当用户询问 A
 - **rule 字段强制渲染** —— 把 `phase_rule.description` 抬到答案最顶 `## ⚠️ 强制规则`，完整 JSON 附末
 - **顶层 ai_suggestion 优先抬升** —— 在强制规则之后、相关文档之前以 `> 💡 主 Agent 综述` 块引用渲染一次
 - **自动逐页 fetch + 合成带引用的答案** —— 对 top-3 static + top-2 dynamic 的 id 各调一次 `wiki_get_page(id)`，跨页面写实质内容
-- **轨迹日志反馈 Q-Value**
 
 **触发场景：**
 - 用户在任何问题中提到 "AscendC" / "Ascend C"，或询问 kernel 开发、算子、API、模式
@@ -151,7 +147,6 @@ pages = [wiki_get_page(id) for id in ids]                      # 逐页循环，
 5. **References** —— 单一列表，tier 前缀 📚（tier1）/ 🔧（tier2），title 取 `wiki_get_page` 的 `frontmatter.title`
 6. **告警 / 状态汇总**（按需）—— 详见"告警状态渲染细则"
 7. **诊断 JSON 附末** —— `phase_rule` + `agent_status` + `agent_turns` + `sub_queries`,详见"rule_description 渲染细则"
-8. **footer** —— 见阶段 E
 
 **引用规则**：每个事实必须**内联**引用 `[Source: <id>]`，紧跟事实写而不放到末尾；多来源 `[Source: <id1>, <id2>]`；id 取 `wiki_get_page` 返回值，不要编造路径。
 
@@ -214,63 +209,33 @@ pages = [wiki_get_page(id) for id in ids]                      # 逐页循环，
 
 **原样透传**，不重试不降级。`agent_status`（ok/degraded/disabled）是顶层枚举,tier1/tier2 共享同一个 Agent 状态。
 
-### 阶段 E：footer 提示上传轨迹
-
-答案末尾加一句：`💡 用 `/session-upload` 把本次会话上传到 Wiki`。上传流程在 `session-upload` skill 里，本 skill 不直接调 `wiki_submit_trajectory`。
-
 ## 输出格式
 
+答案的**版式骨架**如下（`{...}` 是占位符，按实际响应填充；这是结构示意，**不要照抄任何示例文字**，各槽位的具体渲染规则见上方"渲染细则"）：
+
 ```markdown
-## ⚠️ 强制规则
+## ⚠️ 强制规则                 # content_mode==suppressed 时整段省略
+{phase_rule.description}
+{phase_rule.content}            # 规则编号列表，原样贴出
 
-⚠️ 强制约束：phase_rule 中列出的踩坑规则是当前阶段的硬性要求，生成 AscendC kernel 时必须逐条严格遵守；违反将导致编译失败、精度不达标或性能劣化。
-
-1. float/uint32 互转必须经 int32 中转，禁止直接 static_cast。
-2. DataCopy 后必须 EnQue/DeQue 配对，避免读未同步数据。
-3. ...
-
-> 💡 **主 Agent 综述**
->
-> 关于 910C 上 fp16 gemm_add_relu，推荐先看 [id:api_reference:matmul-api] 的 tiling 模式，再结合 [id:practice:fp16-fusion-pattern] 的融合写法；针对 DataCopy block size mismatch，[id:recipe:datacopy-block-align] 给出的对齐校验步骤最直接可用。
+> 💡 **{label}**               # 仅 ai_suggestion 非空时出现；label 按 agent_status 派生
+> {response.ai_suggestion}      # 保留 [id:xxx] 引用原样
 
 ## 📚 相关文档
+{基于 tier1 static 页面正文的结构化答案，带 [Source: <id>] 内联引用}
 
-[基于 tier1 static 页面正文的结构化答案，带 [Source: <id>] 引用]
-
-## 🔧 实践 recipe
-
-### {scenario_1}
-
-[基于 tier2 recipe 页面正文的实质内容] [Source: recipe:simd-perf-memory-access]
+## 🔧 实践 recipe               # dynamic.results 为空时整段隐藏
+### {scenario}
+{基于 tier2 recipe 页面正文的实质内容} [Source: <id>]
 
 ---
+**References:**               # 单一列表，title 取 frontmatter.title
+- 📚 {tier1 id} — {title}
+- 🔧 {tier2 id} — {title}
 
-**References:**
-- 📚 api_reference:matmul-api — <frontmatter.title>
-- 📚 practice:fp16-fusion-pattern — <frontmatter.title>
-- 🔧 recipe:datacopy-block-align — <frontmatter.title>
-- 🔧 recipe:simd-perf-memory-access — <frontmatter.title>
+> {告警/状态行}                 # 按"告警状态渲染细则"，无则省略
 
-> ⚠️ **Server warning**: ...  （仅在 server 返回 warning 时出现）
-> ℹ️ Tier2 主 Agent 判定本区无可用 recipe，建议补充 device_feedback 关键信息  （仅在 no_useful_results=true 时）
-
-```json
-{
-  "phase_rule": {
-    "phase": "correctness",
-    "content_mode": "inject",
-    "content": "...",
-    "description": "⚠️ 强制约束：phase_rule 中列出的踩坑规则是当前阶段的硬性要求……",
-    "estimated_tokens": 0,
-    "rule_refs": [{"phase": "correctness", "version": "...", "full_page_id": "rule:correctness"}]
-  },
-  "agent_status": "ok",
-  "agent_turns": 2,
-  "sub_queries": ["gemm_add_relu fp16 tiling", "DataCopy block align"]
-}
-```
-
-💡 用 `/session-upload` 把本次会话上传到 Wiki
+{诊断 JSON：完整 phase_rule + agent_status + agent_turns + sub_queries，原样附在独立 json fenced block}
 ```
 
 ## 注意事项
@@ -296,5 +261,4 @@ pages = [wiki_get_page(id) for id in ids]                      # 逐页循环，
 | `response.agent_status == "disabled"` | 渲染 `> ℹ️ 本次未走主 Agent (server cfg / 输入异常)...` 告警；results 为纯漏斗序,不删 |
 | `wiki_get_page` 部分失败 | 列出未解析的 id；用其余 `pages` 继续合成 |
 | `phase_rule.content_mode == "suppressed"` | graceful 跳过顶部 `## ⚠️ 强制规则` section；JSON 附末仍保留 |
-| `wiki_submit_trajectory` 失败 | 不在本 skill 处理，走 `session-upload` skill |
 | 网络超时 | "超时，检查 MCP Server 状态" |
