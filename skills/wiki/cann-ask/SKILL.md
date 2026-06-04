@@ -11,7 +11,9 @@ description: "CANN Wiki 知识检索：用自然语言提问检索 AscendC Kerne
 
 **MCP Server 必须已启动**，endpoint: `http://113.46.4.206:8767/mcp`（streamable-http 传输；由 `/setup-cann-wiki` 配置，地址不一致时先跑该 skill）。验证可调 `wiki_search("测试", limit=1)` 或检查 8767 端口。如果未启动，提示用户先启动。
 
-各 MCP 工具的**完整契约快照**（签名 / 入参表含"cann-ask 取值" / 返回结构 / 不变量 / 多轮约定）见 `references/mcp-tools-contract.md`。响应异常时可调 `wiki_help()` 对照，但字段 shape 以**实际响应** / `response_schema.py` / `server.py` 为准（上游 `help_doc.py` 可能滞后，例如仍列 `path`）。
+各 MCP 工具的**完整字段级契约快照**（签名 / 入参表含"cann-ask 取值" / 返回结构 / 不变量 / 多轮约定）在 `references/mcp-tools-contract.md`。**需要查它时，用 Read 工具打开本 skill 基础目录下的该文件** —— 基础目录是 Claude Code 在 "Base directory for this skill:" 处给出的绝对路径，即 Read `<基础目录>/references/mcp-tools-contract.md`。主路径（`wiki_search` + `wiki_get_page`）仅凭本 SKILL.md 即可执行，**不必每次都读**；只在拿不准某个参数/返回字段、或本文档与实际响应对不上时才打开它。下文出现"详见 `references/mcp-tools-contract.md` → …"都按这个方式打开。
+
+响应异常时可调 `wiki_help()` 对照，但字段 shape 以**实际响应** / `response_schema.py` / `server.py` 为准（上游 `help_doc.py` 可能滞后，例如仍列 `path`）。
 
 ## cann-ask 相关工具速查
 
@@ -135,6 +137,20 @@ pages = [wiki_get_page(id) for id in ids]                      # 逐页循环，
 - 命中页 `frontmatter.title` → 阶段 D References 列表的 title
 - 命中页 `content` → 阶段 D 各 tier section 主体的实质内容来源（不是只抄 summary）
 - 返回里带 `error` 的（未命中）→ 个别 id 解析失败时在答案末尾提一句，不阻塞其余页
+
+### 阶段 C+：（可选）raw 真源核对 —— 仅在不确定时调用
+
+`wiki_grep_raw` / `wiki_read_raw` 是**选用工具，不是每次问答都要调**。cann-ask 主流程是 `wiki_search → wiki_get_page → 合成`；只有遇到下面两种情况，才用它们去查官方源码 / 手册的只读副本（`raw/`）核对：
+
+- 你对 wiki 正文里某个符号（API 签名 / tiling 结构体字段 / 编译选项 / 枚举值）的**准确性没把握**，又要据它写进 kernel；
+- wiki 的说法与**真实结果冲突** —— 例如对不上 `device_feedback` 报错、上板实际行为、或官方手册。
+
+用法（两步，按需）：
+
+1. **`wiki_grep_raw(pattern, scope=<该知识的 id 或算子名>)`** —— 在 `raw/` 里 grep 要核对的符号（如 `DataCopyPad`、`SwiGluTilingData`）。`scope` 强烈建议传，收窄检索面；只返回命中行窗口（`hits[].path` + 片段），不返整文件。
+2. 对某条命中，用 **`wiki_read_raw(path, start, end)`** 按行段扩读更多上下文（`path` 直接用上一步返回的 raw file path）。
+
+拿到真源后再落笔；若真源与 wiki 冲突，**以真源为准**并在答案里注明这点。完整签名 / 参数见 `references/mcp-tools-contract.md` → wiki_grep_raw / wiki_read_raw。
 
 ### 阶段 D：合成答案
 
