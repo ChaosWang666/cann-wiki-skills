@@ -180,6 +180,7 @@ def main():
     sess = dict(common)
     if sid:
         sess["mcp-session-id"] = sid
+        # Required handshake step before tools/call (stateful only).
         _post(args.url, sess, json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}))
 
     call_req = {
